@@ -138,3 +138,30 @@ def test_banned_word_table(word, suggestion):
         assert word not in lint.BANNED_WORDS
     else:
         assert lint.BANNED_WORDS[word] == suggestion
+
+
+def test_flags_previously_missing_banned_words():
+    found = [v for v in lint.lint("Imagine the tapestry. Discover more. You are not alone.")
+             if v.rule == "banned_word"]
+    assert len(found) == 4
+
+
+def test_in_a_world_where_is_setup_language_not_banned_word():
+    [v] = lint.lint("In a world where software ships daily, tests matter.")
+    assert v.rule == "setup_language"
+
+
+def test_bold_markdown_is_a_single_asterisk_violation():
+    found = [v for v in lint.lint("Use **bold** text.") if v.rule == "asterisk"]
+    assert len(found) == 1
+    assert found[0].text == "**bold**"
+
+
+def test_bullet_marker_is_a_single_asterisk_violation():
+    found = [v for v in lint.lint("* item") if v.rule == "asterisk"]
+    assert len(found) == 1
+
+
+def test_lone_asterisk_is_a_single_violation():
+    found = [v for v in lint.lint("Some text * more text.") if v.rule == "asterisk"]
+    assert len(found) == 1

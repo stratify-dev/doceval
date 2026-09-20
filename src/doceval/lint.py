@@ -33,7 +33,6 @@ BANNED_WORDS: dict[str, str] = {
     "skyrocket": "rise sharply",
     "skyrocketing": "rising sharply",
     "abyss": "delete",
-    "in a world where": "delete",
     "revolutionize": "change",
     "disruptive": "delete",
     "utilize": "use",
@@ -65,6 +64,9 @@ BANNED_WORDS: dict[str, str] = {
     "powerful": "name the capability",
     "inquiries": "questions",
     "ever-evolving": "changing",
+    "imagine": "delete",
+    "discover": "find",
+    "not alone": "delete",
 }
 
 # Common words needing a human read. Usually removable, sometimes correct.
@@ -87,13 +89,14 @@ SETUP_PHRASES: dict[str, str] = {
     "in conclusion": "delete the phrase",
     "in summary": "delete the phrase",
     "in closing": "delete the phrase",
+    "in a world where": "delete",
 }
 
 _FENCED_BLOCK = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
 _EM_DASH = re.compile(r"[—–]")
 _SEMICOLON = re.compile(r";")
-_ASTERISK = re.compile(r"\*")
+_ASTERISK = re.compile(r"\*{1,3}[^*\n]+\*{1,3}|\*+")
 _HASHTAG = re.compile(r"#\w+")
 _NOT_JUST = re.compile(r"\bnot just\b[^.!?]*?\bbut also\b", re.IGNORECASE)
 
