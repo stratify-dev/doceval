@@ -17,7 +17,7 @@ GROUPS = ("house_style", "editorial", "audience_fit")
 WEIGHT_TOLERANCE = 0.001
 MIN_LEVELS = 2
 MAX_LEVELS = 10
-PROFILE_DIR = Path(__file__).resolve().parents[2] / "profiles"
+PROFILE_DIR = Path(__file__).resolve().parent / "profiles"
 
 
 class ProfileError(ValueError):
@@ -208,6 +208,12 @@ def _parse_gate(raw: object, source: str) -> Gate | None:
     criteria = body.get("criteria") or {}
     if not isinstance(criteria, dict):
         raise ProfileError(f"{where}: 'criteria' must be a mapping")
+    for key in criteria:
+        if not isinstance(key, str):
+            raise ProfileError(
+                f'{where}: criteria key {key!r} must be quoted in YAML — '
+                f'write "true" and "false" as strings, not bare booleans'
+            )
 
     return Gate(
         id=str(gate_id),

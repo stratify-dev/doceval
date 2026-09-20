@@ -132,6 +132,19 @@ def test_rejects_duplicate_dimension_id(tmp_path):
         mod.load_profile(path)
 
 
+def test_rejects_unquoted_boolean_gate_criteria_keys(tmp_path):
+    path = tmp_path / "badgate.yaml"
+    path.write_text(
+        "name: t\naudience: x\n"
+        "gate:\n  is_finished_prose:\n    type: noul\n    instructions: q\n"
+        "    criteria:\n      true: yes it is\n      false: no it is not\n"
+        "dimensions:\n  a:\n    group: house_style\n    weight: 1.0\n    type: score\n"
+        "    instructions: q\n    levels: [a, b]\n"
+    )
+    with pytest.raises(mod.ProfileError, match="quoted"):
+        mod.load_profile(path)
+
+
 def test_loads_bundled_profile_by_name():
     p = mod.load_profile("house-style")
     assert p.name == "house-style"
