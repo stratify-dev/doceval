@@ -99,6 +99,18 @@ def test_corrupt_or_non_object_entries_are_misses(tmp_path, contents):
     assert cache.read(tmp_path, key) is None
 
 
+def test_invalid_utf8_bytes_are_a_miss(tmp_path):
+    """A cache file with undecodable bytes must miss, not raise.
+
+    Without UnicodeDecodeError in read()'s except clause, one corrupt file
+    aborts the whole run instead of costing a single fresh request. This
+    needs a raw bytes write; a text-mode write cannot reproduce the failure.
+    """
+    key = cache.cache_key("text", "fp")
+    (tmp_path / f"{key}.json").write_bytes(b"\xff\xfe\x00not utf-8")
+    assert cache.read(tmp_path, key) is None
+
+
 @pytest.mark.skipif(
     sys.platform == "win32" or os.geteuid() == 0,
     reason="permission bits are not enforced for root or reliably on this platform",
