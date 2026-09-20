@@ -495,6 +495,26 @@ def test_trusted_group_rollup_number_is_not_dim():
     assert "\x1b[2;32m0.95\x1b[0m" not in rendered
 
 
+# --- Fix wave: sparkline must degrade on a malformed payload, never raise --
+#
+# Whole-branch review finding 1: sorted(probabilities, key=lambda k: int(k))
+# raised ValueError the moment any probability key off the wire wasn't
+# int-parseable, and float(probabilities[level]) raised the same way for an
+# unparseable value -- either one used to take the whole report down.
+
+
+def test_sparkline_skips_a_key_that_does_not_parse_as_an_int():
+    assert report.sparkline({"bad": 0.5, "1": 1.0}) == report.BLOCKS[-1]
+
+
+def test_sparkline_skips_a_value_that_does_not_parse_as_a_float():
+    assert report.sparkline({"0": "not-a-number", "1": 1.0}) == report.BLOCKS[-1]
+
+
+def test_sparkline_returns_empty_when_nothing_parses():
+    assert report.sparkline({"bad": 0.5, "worse": "also-bad"}) == ""
+
+
 def test_needs_review_marker_is_not_dim():
     """The ⚠ review marker is itself the warning; muting it with an
     inherited dim (\\x1b[2;33m) defeats the point of it being coloured

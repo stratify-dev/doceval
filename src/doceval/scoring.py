@@ -147,27 +147,73 @@ def weakest_dimensions(
     return sorted(means, key=lambda pair: pair[1])[:limit]
 
 
+def _parse_float(value: object) -> float | None:
+    """Read a payload value as a float, or None when it can't be read.
+
+    None covers both a missing key (`dict.get` already returns None for
+    that) and a key that IS present with an explicit JSON null -- a
+    malformed answer payload can carry either, and `dict.get(key, default)`
+    alone only rescues the first: the default never fires for a present-but-
+    null value, so a bare `float(answer.get(key, default))` still raises on
+    the second.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value: object, default: float) -> float:
+    """`_parse_float`, falling back to `default` when the value can't be read."""
+    parsed = _parse_float(value)
+    return default if parsed is None else parsed
+
+
+def _as_probabilities(value: object) -> dict:
+    """A probabilities mapping, or {} when the payload didn't send one.
+
+    `dict(answer.get("probabilities", {}))` raises TypeError the moment the
+    key is present with value null, since `dict(None)` isn't iterable --
+    the same present-but-null gap `_parse_float` closes for a scalar.
+    """
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _unscored_dimension(dimension: Dimension) -> DimensionResult:
+    """The shape for a dimension with nothing usable to show: flagged for
+    review, zeroed out, excluded from the composite. Shared by a missing
+    answer and an answer whose score can't be read at all -- to the report
+    and the composite, an unreadable score is the same claim as no score.
+    """
+    return DimensionResult(
+        id=dimension.id, label=dimension.label, group=dimension.group,
+        weight=dimension.weight, raw=0.0, normalized=0.0, probabilities={},
+        confidence=0.0, needs_review=True,
+    )
+
+
 def _gate_passed(prof: Profile, answers: dict[str, dict]) -> bool:
     if prof.gate is None:
         return True
     answer = answers.get(prof.gate.id)
     if not answer:
         return True  # a missing gate answer never blocks a document
-    return float(answer.get("noul", 1.0)) >= GATE_THRESHOLD
+    return _as_float(answer.get("noul"), 1.0) >= GATE_THRESHOLD
 
 
 def _dimension_result(
     dimension: Dimension, answer: dict | None, min_confidence: float
 ) -> DimensionResult:
     if not answer:
-        return DimensionResult(
-            id=dimension.id, label=dimension.label, group=dimension.group,
-            weight=dimension.weight, raw=0.0, normalized=0.0, probabilities={},
-            confidence=0.0, needs_review=True,
-        )
+        return _unscored_dimension(dimension)
 
-    raw = float(answer.get("score", 0.0))
-    confidence = float(answer.get("confidence", 0.0))
+    raw = _parse_float(answer.get("score"))
+    if raw is None:
+        return _unscored_dimension(dimension)
+
+    confidence = _as_float(answer.get("confidence"), 0.0)
     return DimensionResult(
         id=dimension.id,
         label=dimension.label,
@@ -175,7 +221,7 @@ def _dimension_result(
         weight=dimension.weight,
         raw=raw,
         normalized=normalize(raw, len(dimension.levels)),
-        probabilities=dict(answer.get("probabilities", {})),
+        probabilities=_as_probabilities(answer.get("probabilities")),
         confidence=confidence,
         needs_review=confidence < min_confidence,
     )

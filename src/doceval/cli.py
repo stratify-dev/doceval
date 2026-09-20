@@ -144,20 +144,37 @@ def eval_command(paths, profile_name, output_format, min_confidence, fail_under,
         )
     elapsed = time.monotonic() - started
 
-    results = [
-        scoring.error_result(outcome.document, outcome.error)
-        if outcome.error is not None
-        else scoring.score_document(
-            document=outcome.document, prof=prof, answers=outcome.answers or {},
-            violations=lint_mod.lint(outcome.document.text),
-            min_confidence=min_confidence, model=outcome.model, cached=outcome.cached,
-        )
-        for outcome in outcomes
-    ]
+    results = [_score_outcome(outcome, prof, min_confidence) for outcome in outcomes]
     results += [scoring.error_result(document, message) for document, message in failures]
 
     _render(results, prof, outcomes, elapsed, output_format, compact, no_color)
     sys.exit(_exit_code(results, fail_under, fail_on_lint))
+
+
+def _score_outcome(outcome, prof, min_confidence):
+    """Score one outcome, or turn a scoring failure into that document's
+    own error_result rather than letting it take the whole run down.
+
+    evaluate.py isolates every per-document failure during the network call,
+    but scoring and rendering happen afterward, outside that net entirely.
+    scoring.py's own coercion (see _as_float) already keeps a malformed
+    answer payload from raising in the first place, but this is the second,
+    outer layer: whatever scoring bug slips past that -- known or not --
+    must still cost only its own document, the same guarantee evaluate.py
+    already gives the request itself.
+    """
+    if outcome.error is not None:
+        return scoring.error_result(outcome.document, outcome.error)
+    try:
+        return scoring.score_document(
+            document=outcome.document, prof=prof, answers=outcome.answers or {},
+            violations=lint_mod.lint(outcome.document.text),
+            min_confidence=min_confidence, model=outcome.model, cached=outcome.cached,
+        )
+    except Exception as error:
+        return scoring.error_result(
+            outcome.document, f"{type(error).__name__}: {error}"
+        )
 
 
 def _render(results, prof, outcomes, elapsed, output_format, compact, no_color) -> None:

@@ -70,14 +70,33 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 
 
 def sparkline(probabilities: dict[str, float]) -> str:
-    """One block per level, height proportional to that level's probability."""
-    if not probabilities:
+    """One block per level, height proportional to that level's probability.
+
+    A key has to parse as an int to sort and place, and a value has to parse
+    as a float to size a block. A malformed answer payload can carry either
+    kind of bad entry; each is skipped rather than raised on, so one bad key
+    never drops the whole row. No usable entry at all renders the same ""
+    an empty dict already does.
+    """
+    parsed: list[tuple[int, float]] = []
+    for key, value in probabilities.items():
+        try:
+            level = int(key)
+        except (TypeError, ValueError):
+            continue
+        try:
+            probability = float(value)
+        except (TypeError, ValueError):
+            continue
+        parsed.append((level, probability))
+
+    if not parsed:
         return ""
-    levels = sorted(probabilities, key=lambda key: int(key))
+
     top = len(BLOCKS) - 1
     return "".join(
-        BLOCKS[round(max(0.0, min(1.0, float(probabilities[level]))) * top)]
-        for level in levels
+        BLOCKS[round(max(0.0, min(1.0, probability)) * top)]
+        for _, probability in sorted(parsed)
     )
 
 

@@ -386,3 +386,96 @@ def test_lint_exits_two_on_an_unreadable_source_even_with_a_good_one(
     result = runner.invoke(cli.main, ["lint", post, "missing.md"])
     assert result.exit_code == 2
     assert "not found" in result.output
+
+
+# --- Fix wave, finding 1 -------------------------------------------------
+#
+# Scoring and rendering run after asyncio.run, at cli.py:147-159, with no
+# isolation of their own -- evaluate.py's per-document try/except only
+# covers the network call. A malformed answer payload (a null score, a null
+# gate noul, a non-numeric probability key) used to raise uncaught, lose
+# every other document's already-computed result, and exit 1 -- the code
+# README.md documents as "a threshold was breached," not a crash.
+
+
+def test_a_null_bearing_answer_does_not_crash_the_whole_run(runner, tmp_path, monkeypatch):
+    """End to end: a null score in one document's payload must not lose the
+    other document's result or disguise a crash as exit 1. With the
+    composed fix (scoring.py's own coercion handles the null gracefully),
+    the affected dimension is flagged needs_review, the document still
+    scores from its other nine dimensions, and a plain run with no
+    --fail-under exits 0 exactly like any other clean run -- not 1 (the old
+    crash) and not 2 (which is what it would exit if only cli.py's outer
+    guard, and not scoring.py's own fix, were catching this).
+    """
+    good_path = tmp_path / "good.md"
+    good_path.write_text(f"# Good\n\n{PROSE}\n")
+    bad_path = tmp_path / "bad.md"
+    bad_path.write_text(f"# Bad\n\n{PROSE}\n")
+
+    async def fake(documents, prof, **kwargs):
+        outcomes = []
+        for d in documents:
+            answers = ANSWERS
+            if d.id == str(bad_path):
+                answers = {**ANSWERS,
+                           "active_voice": {**ANSWERS["active_voice"], "score": None}}
+            outcomes.append(evaluate.Outcome(
+                document=d, answers=answers, model="jev-1.13.0",
+                usage={"input_tokens": 100, "output_tokens": 10}))
+        return outcomes
+
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
+    monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
+
+    result = runner.invoke(cli.main, ["eval", str(good_path), str(bad_path), "--no-cache"])
+
+    assert result.exception is None
+    assert result.exit_code == 0
+    assert good_path.name in result.output
+    assert bad_path.name in result.output
+    assert "review" in result.output  # the null-scored dimension is flagged
+
+
+def test_a_scoring_exception_for_one_document_does_not_kill_the_run(
+    runner, post, tmp_path, monkeypatch
+):
+    """Layer test for cli.py's own outer guard, independent of scoring.py's
+    coercion fix: force scoring.score_document itself to raise for one
+    document (something scoring.py's own fix can't be expected to
+    anticipate every case of) and confirm the other document still reports
+    and the run doesn't exit 1 as if a threshold had been breached.
+    """
+    other_path = tmp_path / "other.md"
+    other_path.write_text(f"# Other\n\n{PROSE}\n")
+
+    async def fake(documents, prof, **kwargs):
+        return [evaluate.Outcome(document=d, answers=ANSWERS, model="jev-1.13.0",
+                                  usage={"input_tokens": 100, "output_tokens": 10})
+                for d in documents]
+
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
+    monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
+
+    real_score_document = cli.scoring.score_document
+
+    def flaky(*, document, **kwargs):
+        if document.id == post:
+            raise RuntimeError("boom during scoring")
+        return real_score_document(document=document, **kwargs)
+
+    monkeypatch.setattr(cli.scoring, "score_document", flaky)
+
+    result = runner.invoke(cli.main, ["eval", post, str(other_path), "--no-cache"])
+
+    # exit 2 (operational error) is the correct, honest code here -- one
+    # document genuinely failed to score. exit 1 would be the bug: a crash
+    # disguised as "a threshold was breached" (README.md's own words for 1),
+    # which is what happens pre-fix when the exception isn't caught at all
+    # and CliRunner's default handling reports it as exit 1.
+    assert result.exit_code == 2
+    assert not isinstance(result.exception, RuntimeError)
+    assert "boom during scoring" in result.output
+    assert other_path.name in result.output
+    assert "GOOD" in result.output
+

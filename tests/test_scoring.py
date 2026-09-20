@@ -283,6 +283,73 @@ def test_property_missing_answer_produces_a_row_not_a_hole():
     assert concision.probabilities == {}
 
 
+# --- Fix wave: a malformed answer payload must degrade, never raise -------
+#
+# Whole-branch review finding 1: score_document ran outside evaluate.py's
+# own per-document isolation, and float(answer.get(key, default)) never
+# falls back for a key present with value null -- only for a missing key.
+# A null score, a null confidence, a null gate noul, a non-numeric score, or
+# null probabilities each used to raise (TypeError or ValueError) and take
+# the whole corpus down with them.
+
+
+def test_null_score_is_treated_like_a_missing_answer():
+    result = build({
+        "active_voice": {**score_answer(4.0, 0.9), "score": None},
+        "concision": score_answer(4.0, 0.9),
+        "is_prose": {"type": "noul", "noul": 1.0},
+    })
+    dims = {d.id: d for g in result.groups for d in g.dimensions}
+    assert dims["active_voice"].needs_review is True
+    assert dims["active_voice"].confidence == 0.0
+    assert dims["active_voice"].raw == 0.0
+    assert dims["active_voice"].probabilities == {}
+    # the other, well-formed dimension still scores normally
+    assert result.composite == pytest.approx(1.0)
+
+
+def test_non_numeric_score_is_treated_like_a_missing_answer():
+    result = build({
+        "active_voice": {**score_answer(4.0, 0.9), "score": "not-a-number"},
+        "concision": score_answer(4.0, 0.9),
+        "is_prose": {"type": "noul", "noul": 1.0},
+    })
+    dims = {d.id: d for g in result.groups for d in g.dimensions}
+    assert dims["active_voice"].needs_review is True
+
+
+def test_null_confidence_falls_back_to_zero_rather_than_raising():
+    result = build({
+        "active_voice": {**score_answer(4.0, 0.9), "confidence": None},
+        "concision": score_answer(4.0, 0.9),
+        "is_prose": {"type": "noul", "noul": 1.0},
+    })
+    dims = {d.id: d for g in result.groups for d in g.dimensions}
+    assert dims["active_voice"].confidence == 0.0
+    assert dims["active_voice"].needs_review is True
+
+
+def test_null_gate_noul_defaults_to_passing_rather_than_raising():
+    result = build({
+        "active_voice": score_answer(4.0, 0.9),
+        "concision": score_answer(4.0, 0.9),
+        "is_prose": {"type": "noul", "noul": None},
+    })
+    assert result.gate_passed is True
+
+
+def test_null_probabilities_does_not_raise():
+    result = build({
+        "active_voice": {**score_answer(4.0, 0.9), "probabilities": None},
+        "concision": score_answer(4.0, 0.9),
+        "is_prose": {"type": "noul", "noul": 1.0},
+    })
+    dims = {d.id: d for g in result.groups for d in g.dimensions}
+    assert dims["active_voice"].probabilities == {}
+    # a null probabilities field doesn't imply an unreadable score
+    assert dims["active_voice"].needs_review is False
+
+
 def test_property_unscored_is_distinct_from_a_zero_composite():
     """UNSCORED (composite is None) means every judgment was too uncertain
     to combine. A WEAK verdict with composite == 0.0 means the model was
