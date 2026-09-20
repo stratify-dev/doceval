@@ -33,8 +33,12 @@ LABEL_WIDTH = 20
 
 # A violation's text used to be exactly one character (the old asterisk rule
 # matched single characters). It is now an unbounded span, so it needs a cap
-# before it reaches a fixed-width report column.
-VIOLATION_TEXT_WIDTH = 40
+# before it reaches a fixed-width report column. The cap must agree with that
+# column: the violation detail row quotes the cleaned text and ljust(20)s it,
+# so the cap leaves room for the two quote characters within 20 (18 + 2).
+# Widen one and the other must widen with it, or a maximal violation still
+# overruns the "→ suggestion" column it was capped to protect.
+VIOLATION_TEXT_WIDTH = 18
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 
@@ -71,17 +75,14 @@ def _dimension_bar_style(dimension: DimensionResult) -> str:
     """The score band's colour, dimmed when confidence is too low to trust it.
 
     A dimension flagged needs_review is excluded from the composite by
-    scoring._weighted_mean, but its bar still renders in the tree. Each
-    dimension row's tree-branch prefix (" │ ├ ") carries a "dim" base style
-    for the connector characters, and Rich Text inherits that base into
-    every appended span whose own style doesn't say otherwise, so a plain
-    style_for(value) bar reads dim either way. Both branches here are
-    explicit for that reason: "not dim" overrides the inherited dim so a
-    trustworthy score reads solid, and "dim" holds a shaky one faded, so
-    the two are visibly different rather than uniformly muted.
+    scoring._weighted_mean, but its bar still renders in the tree. Rows are
+    built with a "dim" style on the tree-branch prefix only (see _render_one),
+    not on the row as a whole, so a plain style_for(value) here already reads
+    solid by default; "dim" is added on top only for the shaky case, so a
+    low-confidence bar visibly fades against every neighbouring solid one.
     """
     band = style_for(dimension.normalized)
-    return f"dim {band}" if dimension.needs_review else f"not dim {band}"
+    return f"dim {band}" if dimension.needs_review else band
 
 
 def _clean_violation_text(text: str, width: int = VIOLATION_TEXT_WIDTH) -> str:
@@ -129,7 +130,14 @@ def _render_one(console: Console, result: DocumentResult, compact: bool) -> None
 
     console.print(Text(" │", style="dim"))
     for group in result.groups:
-        line = Text(" ├ ", style="dim")
+        # A Text's own style= constructor argument is a base that Rich
+        # inherits into every span appended after it, even one carrying its
+        # own explicit style. Building each row as a plain Text() and
+        # appending the tree-branch prefix with style="dim" keeps the dim
+        # confined to that prefix; every later span then carries only the
+        # style it is given, instead of a color band getting muddied dim.
+        line = Text()
+        line.append(" ├ ", style="dim")
         line.append(group.name.replace("_", " ").ljust(LABEL_WIDTH + 24))
         line.append(_number(group.score), style=style_for(group.score))
         console.print(line)
@@ -139,7 +147,8 @@ def _render_one(console: Console, result: DocumentResult, compact: bool) -> None
 
         for index, dimension in enumerate(group.dimensions):
             last = index == len(group.dimensions) - 1
-            row = Text(" │ " + ("└ " if last else "├ "), style="dim")
+            row = Text()
+            row.append(" │ " + ("└ " if last else "├ "), style="dim")
             row.append(dimension.label.ljust(LABEL_WIDTH))
             row.append(bar(dimension.normalized), style=_dimension_bar_style(dimension))
             row.append(f"  {dimension.normalized:.2f}  ")
@@ -150,14 +159,16 @@ def _render_one(console: Console, result: DocumentResult, compact: bool) -> None
             console.print(row)
         console.print(Text(" │", style="dim"))
 
-    counts = Text(" └ ", style="dim")
+    counts = Text()
+    counts.append(" └ ", style="dim")
     counts.append("lint".ljust(LABEL_WIDTH))
     counts.append(f"{len(result.errors)} errors · {len(result.warnings)} warnings")
     console.print(counts)
 
     for violation in result.errors:
         cleaned = _clean_violation_text(violation.text)
-        detail = Text(f"     line {violation.line}".ljust(15), style="dim")
+        detail = Text()
+        detail.append(f"     line {violation.line}".ljust(15), style="dim")
         detail.append(violation.rule.replace("_", " ").ljust(16))
         detail.append(f'"{cleaned}"'.ljust(20))
         detail.append(f"→ {violation.suggestion}", style="dim")

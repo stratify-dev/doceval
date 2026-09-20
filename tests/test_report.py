@@ -309,6 +309,35 @@ def test_render_documents_shows_blanked_code_span_without_a_run_of_spaces():
     assert "across  " not in detail_line  # no leftover run from the masked code
 
 
+def test_violation_detail_rows_align_and_never_wrap_at_a_piped_width_80():
+    """Fix round 1, finding 1: the truncation cap must agree with the
+    ljust(20) column it protects. A cap that leaves the quoted text longer
+    than the column pushes "→ suggestion" out to a ragged position, and at
+    Rich's un-piped default width of 80 that ragged row wraps onto a second
+    line — exactly the layout blowout the cap exists to prevent. This
+    renders three violations of very different original lengths to a
+    non-terminal, width-80 console and checks the arrow lands in the same
+    column every time, with no line wrapping.
+    """
+    violations = (
+        lint.Violation("asterisk", "error", 1, 1, "x", "rewrite for emphasis"),
+        lint.Violation("asterisk", "error", 2, 1, "a medium span of words here", "rewrite for emphasis"),
+        lint.Violation("asterisk", "error", 3, 1, "x" * 500, "rewrite for emphasis"),
+    )
+    result = make_result(violations=violations)
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=80)
+    report.render_documents(console, [result])
+    lines = buffer.getvalue().splitlines()
+
+    assert all(len(line) <= 80 for line in lines)
+
+    detail_lines = [line for line in lines if "asterisk" in line]
+    assert len(detail_lines) == 3  # one line per violation: none wrapped
+    arrow_columns = {line.index("→") for line in detail_lines}
+    assert len(arrow_columns) == 1  # the arrow lands in the same column every time
+
+
 # --- Requirement B: corpus view shows the sample count per group ------------
 #
 # corpus_group_averages collapses each group to a single float and discards
@@ -351,13 +380,12 @@ def test_json_summary_group_averages_unaffected_by_report_count_tracking():
 # The brief colours every dimension bar purely by its score band. A
 # needs_review dimension (confidence below the gate) is excluded from the
 # composite entirely, but style_for(normalized) alone would still colour a
-# high-scoring, low-confidence bar the same as a real, trustworthy one. Worse,
-# every dimension row's tree-branch prefix carries a "dim" base style that
-# Rich inherits into every appended span regardless of that span's own style,
-# so style_for(value) alone renders every bar uniformly faded and a shaky
-# number is indistinguishable from a solid one either way. Both directives
-# below must be explicit ("not dim" / "dim") so a trustworthy bar reads solid
-# and a shaky one reads faded, rather than both reading the same.
+# high-scoring, low-confidence bar the same as a real, trustworthy one. Each
+# row is now built as a plain Text() with "dim" applied only to its
+# tree-branch prefix span (see _render_one), so a bare style_for(value) bar
+# already reads solid; _dimension_bar_style adds "dim" on top only for the
+# needs_review case, so a shaky bar reads visibly fainter than a solid one
+# instead of both reading the same.
 
 def test_high_score_low_confidence_dimension_bar_is_dimmed():
     dim = scoring.DimensionResult(
@@ -370,7 +398,7 @@ def test_high_score_high_confidence_dimension_bar_is_not_dimmed():
     dim = scoring.DimensionResult(
         "active_voice", "active voice", "house_style", 0.5, 4.0, 0.95,
         {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.05, "4": 0.95}, 0.95, False)
-    assert report._dimension_bar_style(dim) == "not dim green"
+    assert report._dimension_bar_style(dim) == "green"
 
 
 def test_low_confidence_bar_carries_the_dim_ansi_code_on_a_real_terminal():
@@ -398,3 +426,36 @@ def test_high_confidence_bar_reads_solid_despite_the_dim_tree_prefix():
     rendered = console.export_text(styles=True)
     bar_run = report.bar(0.95, width=20)
     assert f"\x1b[32m{bar_run}\x1b[0m" in rendered  # the bar itself, solid and undimmed
+
+
+def test_trusted_group_rollup_number_is_not_dim():
+    """Fix round 1, finding 2: the group row used to be built as a single
+    Text(prefix, style="dim"), so its own rollup number inherited dim too
+    (rendering \\x1b[2;32m). Under --compact the group number is the only
+    colour left on screen, so it must read solid, not faded."""
+    dim = scoring.DimensionResult(
+        "active_voice", "active voice", "house_style", 0.5, 4.0, 0.95,
+        {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.05, "4": 0.95}, 0.95, False)
+    group = scoring.GroupResult("house_style", 0.95, (dim,))
+    result = make_result(groups=(group,))
+    console = Console(width=100, force_terminal=True, color_system="standard", record=True)
+    report.render_documents(console, [result])
+    rendered = console.export_text(styles=True)
+    assert "\x1b[32m0.95\x1b[0m" in rendered
+    assert "\x1b[2;32m0.95\x1b[0m" not in rendered
+
+
+def test_needs_review_marker_is_not_dim():
+    """The ⚠ review marker is itself the warning; muting it with an
+    inherited dim (\\x1b[2;33m) defeats the point of it being coloured
+    yellow at all. It must render at full intensity."""
+    dim = scoring.DimensionResult(
+        "concision", "concision", "editorial", 0.5, 2.0, 0.5,
+        {"0": 0.1, "1": 0.2, "2": 0.4, "3": 0.2, "4": 0.1}, 0.44, True)
+    group = scoring.GroupResult("editorial", None, (dim,))
+    result = make_result(groups=(group,))
+    console = Console(width=100, force_terminal=True, color_system="standard", record=True)
+    report.render_documents(console, [result])
+    rendered = console.export_text(styles=True)
+    assert "\x1b[33m  ⚠ review\x1b[0m" in rendered
+    assert "\x1b[2;33m" not in rendered
