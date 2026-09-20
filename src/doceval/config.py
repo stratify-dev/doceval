@@ -38,8 +38,13 @@ class MissingAPIKey(Exception):
 def load_env(start: Path | None = None) -> None:
     """Load a .env file from `start` or the current directory upward.
 
-    A real environment variable always wins, so `override` stays False.
+    A real environment variable always wins, so `override` stays False. A
+    blank or whitespace-only exported value doesn't count as real, so it's
+    cleared first, letting a `.env` value fill it in.
     """
+    existing = os.environ.get(API_KEY_ENV)
+    if existing is not None and not existing.strip():
+        del os.environ[API_KEY_ENV]
     base = Path(start) if start is not None else Path.cwd()
     for directory in [base, *base.parents]:
         candidate = directory / ".env"

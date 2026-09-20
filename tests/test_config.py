@@ -57,3 +57,10 @@ def test_dotenv_fills_unset_value(monkeypatch, tmp_path):
     monkeypatch.delenv(config.API_KEY_ENV, raising=False)
     config.load_env(tmp_path)
     assert config.require_api_key() == "from-dotenv"
+
+
+def test_blank_exported_key_falls_back_to_dotenv(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text(f"{config.API_KEY_ENV}=from-dotenv\n")
+    monkeypatch.setenv(config.API_KEY_ENV, "   ")
+    config.load_env(tmp_path)
+    assert config.require_api_key() == "from-dotenv"
