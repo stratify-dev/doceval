@@ -66,6 +66,18 @@ def test_file_under_min_words_raises(tmp_path):
     assert "JavaScript" not in str(exc_info.value)
 
 
+def test_default_min_words_floor_is_100(tmp_path):
+    below = tmp_path / "below.md"
+    below.write_text(" ".join(["word"] * 50))
+    with pytest.raises(sources.SourceError, match="100-word floor"):
+        sources.load_document(str(below))
+
+    above = tmp_path / "above.md"
+    above.write_text(" ".join(["word"] * 120))
+    doc = sources.load_document(str(above))
+    assert doc.word_count == 120
+
+
 def test_oversized_document_raises(tmp_path):
     path = tmp_path / "huge.md"
     path.write_text("word " * 200_000)
