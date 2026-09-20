@@ -35,8 +35,8 @@ referent pointing at nothing definite, which is a judgment. It becomes the
 doceval/
   pyproject.toml
   README.md
-  profiles/house-style.yaml
   src/doceval/
+    profiles/house-style.yaml   # shipped as package data
     sources.py    # path or URL -> Document
     profile.py    # YAML -> validated Profile
     lint.py       # text -> Violation[]
