@@ -85,6 +85,21 @@ doceval eval content/**/*.md --fail-under 0.7 --fail-on-lint
 Exit codes: `0` success, `1` a threshold was breached (a low score, or a
 document `--fail-under` couldn't score at all), `2` operational error.
 
+## Timeouts
+
+`eval` has two separate timeout flags for two separate HTTP calls:
+
+| Flag | Bounds | Default |
+|---|---|---|
+| `--timeout` | Fetching a URL source | 20s |
+| `--api-timeout` | The TypeSafe API request per document, per attempt | 60s |
+
+They don't share a value on purpose. A single `eval` request can carry up to
+28,000 tokens of document state plus eleven questions, which needs longer than
+a page fetch does. Raise `--api-timeout` for very large documents or a slower
+model. `RetryPolicy`'s own `timeout` (not a flag) is the separate total retry
+budget across every attempt and its backoff, not a per-attempt timeout.
+
 ## Configuration
 
 | Variable | Required | Default |

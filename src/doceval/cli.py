@@ -99,6 +99,9 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
 @click.option("--no-cache", is_flag=True, help="Ignore cached answers.")
 @click.option("--cache-dir", default=DEFAULT_CACHE_DIR, show_default=True)
 @click.option("--timeout", default=20.0, show_default=True, help="URL fetch timeout in seconds.")
+@click.option("--api-timeout", default=evaluate.API_TIMEOUT, show_default=True,
+              help="TypeSafe API request timeout in seconds, per HTTP attempt. "
+                   "Distinct from --timeout, which only bounds fetching a URL source.")
 @click.option("--min-words", default=100, show_default=True,
               help="Reject documents extracting fewer words than this.")
 @click.option("--dump-text", type=click.Path(file_okay=False), default=None,
@@ -106,8 +109,8 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
 @click.option("--compact", is_flag=True, help="Show group rollups only.")
 @click.option("--no-color", is_flag=True, help="Plain output.")
 def eval_command(paths, profile_name, output_format, min_confidence, fail_under,
-                 fail_on_lint, concurrency, no_cache, cache_dir, timeout, min_words,
-                 dump_text, compact, no_color) -> None:
+                 fail_on_lint, concurrency, no_cache, cache_dir, timeout, api_timeout,
+                 min_words, dump_text, compact, no_color) -> None:
     """Evaluate documents and URLs against a profile."""
     quiet = output_format != "table"
     console = Console(no_color=no_color, stderr=quiet)
@@ -139,7 +142,8 @@ def eval_command(paths, profile_name, output_format, min_confidence, fail_under,
         outcomes = asyncio.run(
             evaluate.evaluate_documents(
                 documents, prof, concurrency=concurrency,
-                cache_dir=cache_dir, use_cache=not no_cache, on_start=on_start,
+                cache_dir=cache_dir, use_cache=not no_cache, api_timeout=api_timeout,
+                on_start=on_start,
             )
         )
     elapsed = time.monotonic() - started

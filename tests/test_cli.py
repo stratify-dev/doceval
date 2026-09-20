@@ -479,3 +479,28 @@ def test_a_scoring_exception_for_one_document_does_not_kill_the_run(
     assert other_path.name in result.output
     assert "GOOD" in result.output
 
+
+# --- Fix wave, finding 3 --------------------------------------------------
+#
+# --timeout only ever bounded fetching a URL source; it never reached the
+# TypeSafe API call, which ran with the SDK's own 10s-per-attempt default
+# against a request that can carry up to 28k tokens plus eleven questions.
+# --api-timeout is the new, distinct flag that actually reaches the client.
+
+
+def test_api_timeout_flag_reaches_evaluate_documents(runner, post, monkeypatch):
+    captured = {}
+
+    async def fake(documents, prof, **kwargs):
+        captured.update(kwargs)
+        return [evaluate.Outcome(document=d, answers=ANSWERS, model="jev-1.13.0",
+                                  usage={"input_tokens": 100, "output_tokens": 10})
+                for d in documents]
+
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
+    monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
+
+    result = runner.invoke(cli.main, ["eval", post, "--api-timeout", "5", "--no-cache"])
+
+    assert result.exit_code == 0
+    assert captured.get("api_timeout") == 5.0

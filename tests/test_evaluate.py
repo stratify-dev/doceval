@@ -194,6 +194,51 @@ def test_client_is_built_with_a_retry_policy():
     assert 529 in evaluate.RETRY.http_statuses
 
 
+def test_retry_budget_leaves_room_for_a_retry_after_one_full_attempt():
+    """RETRY.timeout is the TOTAL retry budget, not a per-attempt timeout
+    (typesafe_sdk._core.retry.RetryPolicy.timeout). Setting it equal to
+    API_TIMEOUT would let a single slow attempt consume the whole budget
+    and leave no room for tenacity to ever retry a timeout -- the exact
+    failure finding 3 exists to prevent.
+    """
+    assert evaluate.RETRY.timeout > evaluate.API_TIMEOUT
+
+
+# --- Fix wave, finding 3 --------------------------------------------------
+#
+# _new_client() used to be called with no timeout at all, so
+# AsyncTypeSafeClient fell back to the SDK's own 10s-per-attempt default --
+# far too short for the one request this module sends per document, which
+# can carry up to 28k tokens of state plus eleven questions.
+
+
+async def test_client_is_built_with_an_explicit_timeout(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_new_client(**kwargs):
+        captured.update(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr(evaluate, "_new_client", fake_new_client)
+    await evaluate.evaluate_documents(make_docs(1), PROF, cache_dir=tmp_path, use_cache=False)
+
+    assert captured.get("timeout") == evaluate.API_TIMEOUT
+
+
+async def test_api_timeout_override_reaches_the_client(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_new_client(**kwargs):
+        captured.update(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr(evaluate, "_new_client", fake_new_client)
+    await evaluate.evaluate_documents(
+        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False, api_timeout=5.0)
+
+    assert captured.get("timeout") == 5.0
+
+
 # --- Properties beyond the brief -------------------------------------------
 #
 # Each of these pins a failure mode that would be silent: the run would still

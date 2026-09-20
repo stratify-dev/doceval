@@ -29,10 +29,26 @@ from .sources import Document
 
 DEFAULT_CONCURRENCY = 8
 
+# Per-attempt HTTP timeout for one system_one call. Without an explicit
+# value, AsyncTypeSafeClient falls back to the SDK's own DEFAULT_TIMEOUT
+# (10.0s, typesafe_sdk.constants.DEFAULT_TIMEOUT) -- far too short for the
+# single request this module sends per document: up to MAX_DOCUMENT_TOKENS
+# (28k, see sources.py) of state plus eleven questions, all in one call.
+# This is distinct from RETRY.timeout below, which is the TOTAL budget
+# across every attempt and its backoff, not a per-attempt timeout. 60s is a
+# practical default for that request shape; --api-timeout overrides it per
+# run for a slower model or a corpus of unusually large documents.
+API_TIMEOUT = 60.0
+
 # 408, 429, and every 5xx retry by default, which covers 529 Overloaded.
 # respect_retry_after honors the header when the response carries one.
+# timeout=180.0 (not 60.0) is deliberate: setting the total retry budget
+# equal to the per-attempt timeout above would let a single slow attempt
+# consume the whole budget and leave tenacity no room to ever retry a
+# timeout -- exactly the failure this fix exists to prevent. 180s leaves
+# room for one full-length attempt plus at least one retry with backoff.
 RETRY = RetryPolicy(max_retries=3, backoff_initial=0.5, backoff_max=8.0,
-                    respect_retry_after=True, timeout=60.0)
+                    respect_retry_after=True, timeout=180.0)
 
 
 @dataclass(frozen=True)
@@ -88,6 +104,7 @@ async def evaluate_documents(
     concurrency: int = DEFAULT_CONCURRENCY,
     cache_dir: Path | str | None = None,
     use_cache: bool = True,
+    api_timeout: float = API_TIMEOUT,
     on_start: Callable[[Document], None] | None = None,
     on_done: Callable[[Outcome], None] | None = None,
 ) -> list[Outcome]:
@@ -101,7 +118,7 @@ async def evaluate_documents(
     model = resolve_model()
     semaphore = asyncio.Semaphore(max(1, concurrency))
 
-    async with _new_client() as client:
+    async with _new_client(timeout=api_timeout) as client:
 
         async def run(document: Document) -> Outcome:
             def finish(outcome: Outcome) -> Outcome:
