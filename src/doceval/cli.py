@@ -93,7 +93,7 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
 @click.option("--min-confidence", default=0.6, show_default=True,
               help="Dimensions below this are flagged and excluded from the composite.")
 @click.option("--fail-under", type=float, default=None,
-              help="Exit 1 when any document scores below this.")
+              help="Exit 1 if any document scores below this, or couldn't be scored.")
 @click.option("--fail-on-lint", is_flag=True, help="Exit 1 when any lint error is found.")
 @click.option("--concurrency", default=8, show_default=True)
 @click.option("--no-cache", is_flag=True, help="Ignore cached answers.")

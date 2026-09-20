@@ -333,6 +333,41 @@ def test_fail_under_still_passes_a_document_above_threshold(runner, post, stub_a
     assert result.exit_code == 0
 
 
+# Without --fail-under, thresholds are opt-in entirely: a document that
+# couldn't be scored must still exit 0, exactly like a low-scoring one does
+# (test_eval_exits_zero_without_a_threshold). Nothing pinned this direction
+# after the round-1 fix -- drop the `fail_under is not None` guard in
+# _exit_code later and these two would start failing a plain run on an
+# UNSCORED/NOT_PROSE document while the rest of the suite stayed green.
+
+
+def test_unscored_exits_zero_without_a_threshold(runner, post, stub_api, monkeypatch):
+    async def unscored(documents, prof, **kwargs):
+        answers = {
+            k: ({**v, "confidence": 0.0} if k != "is_finished_prose" else v)
+            for k, v in ANSWERS.items()
+        }
+        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
+                for d in documents]
+
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", unscored)
+    result = runner.invoke(cli.main, ["eval", post, "--no-cache"])
+    assert result.exit_code == 0
+    assert "UNSCORED" in result.output
+
+
+def test_gate_failure_exits_zero_without_a_threshold(runner, post, stub_api, monkeypatch):
+    async def not_prose(documents, prof, **kwargs):
+        answers = {**ANSWERS, "is_finished_prose": {"type": "noul", "noul": 0.0}}
+        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
+                for d in documents]
+
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", not_prose)
+    result = runner.invoke(cli.main, ["eval", post, "--no-cache"])
+    assert result.exit_code == 0
+    assert "NOT_PROSE" in result.output
+
+
 # Finding 2: `lint` only exited 2 when EVERY path failed to load
 # (`if failures and not documents`), so one typo'd path alongside a good
 # one reported success. `eval` was already stricter -- any failure exits
@@ -343,9 +378,11 @@ def test_fail_under_still_passes_a_document_above_threshold(runner, post, stub_a
 def test_lint_exits_two_on_an_unreadable_source_even_with_a_good_one(
     runner, post, monkeypatch
 ):
+    # No filename check here: Rich folds a long tmp_path at its fixed
+    # 80-column width, and where the fold lands shifts with pytest's tmpdir
+    # slug (which changes with e.g. the test's own name). The exit code and
+    # the error text below already carry what this test claims to pin.
     monkeypatch.delenv(config.API_KEY_ENV, raising=False)
     result = runner.invoke(cli.main, ["lint", post, "missing.md"])
     assert result.exit_code == 2
     assert "not found" in result.output
-    # The good file's own violation list still printed alongside the error.
-    assert f"{Path(post).name}" in result.output

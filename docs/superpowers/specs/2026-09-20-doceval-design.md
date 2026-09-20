@@ -453,7 +453,8 @@ Exit codes: `0` success, `1` a threshold was breached, `2` operational error.
 
 Thresholds are opt-in. Without `--fail-under` or `--fail-on-lint`, a run reports and
 exits `0` whatever the scores, which is what you want interactively. Passing
-`--fail-under 0.7` exits `1` when any document scores below it. Passing
+`--fail-under 0.7` exits `1` when any document scores below it, or couldn't
+be scored at all. Passing
 `--fail-on-lint` exits `1` on any lint error, ignoring warnings. Together they make
 the tool a CI gate on a content repo.
 
