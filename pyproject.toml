@@ -29,3 +29,6 @@ packages = ["src/doceval"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live: test makes real network requests; requires DOCEVAL_LIVE_API=1 to run",
+]

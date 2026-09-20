@@ -25,10 +25,15 @@ def _block_network(request, monkeypatch):
     every test remembers to mock; the first one that forgets would make a
     real request. Here, it fails loudly instead.
 
-    Set DOCEVAL_LIVE_API=1 to exempt a deliberately live test from the
-    block (see the live API test gated on it).
+    The block is lifted only for a test marked @pytest.mark.live, never by
+    ambient environment. DOCEVAL_LIVE_API decides whether a live test is
+    allowed to run at all (Task 10's live API test is skipif-gated on it),
+    but that is a separate concern from this fixture: a stray exported
+    DOCEVAL_LIVE_API=1 must not, by itself, silently disable network
+    enforcement for the other 70-odd tests in the suite. A test reaches
+    the network only by explicitly declaring that it does, via the marker.
     """
-    if os.environ.get("DOCEVAL_LIVE_API") == "1":
+    if request.node.get_closest_marker("live") is not None:
         yield
         return
 
@@ -38,9 +43,11 @@ def _block_network(request, monkeypatch):
         raise NetworkBlockedError(
             f"{test_id} attempted a real network connection. Route it "
             "through the sources._client seam with httpx.MockTransport, "
-            "or set DOCEVAL_LIVE_API=1 for a deliberately live test."
+            "or mark the test @pytest.mark.live if it must be live."
         )
 
     monkeypatch.setattr(socket.socket, "connect", _blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", _blocked)
     monkeypatch.setattr(socket, "create_connection", _blocked)
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked)
     yield
