@@ -97,7 +97,14 @@ _INLINE_CODE = re.compile(r"`[^`\n]+`")
 _EM_DASH = re.compile(r"[—–]")
 _SEMICOLON = re.compile(r";")
 _ASTERISK = re.compile(r"\*{1,3}[^*\n]+\*{1,3}|\*+")
-_HASHTAG = re.compile(r"#\w+")
+# Not preceded by a word character, /, :, ., #, or -, so a URL fragment
+# anchor (...#configuration) or a second heading marker (##) is left alone;
+# a real hashtag is normally preceded by whitespace or line start.
+_HASHTAG = re.compile(r"(?<![\w/:.#-])#\w+")
+# A named or numeric HTML/XML character reference (&nbsp; &amp; &#8212;).
+# Used to exempt the semicolon that closes one from the semicolon rule,
+# below -- it's punctuation syntax, not prose punctuation.
+_HTML_ENTITY = re.compile(r"&#?[0-9a-zA-Z]+;")
 _NOT_JUST = re.compile(r"\bnot just\b[^.!?]*?\bbut also\b", re.IGNORECASE)
 
 
@@ -148,7 +155,10 @@ def lint(text: str) -> list[Violation]:
         add("em_dash", SEVERITY_ERROR, match.start(), match.group(),
             "comma, period, or parentheses")
 
+    entity_semicolons = {match.end() - 1 for match in _HTML_ENTITY.finditer(masked)}
     for match in _SEMICOLON.finditer(masked):
+        if match.start() in entity_semicolons:
+            continue  # closes an HTML entity (&nbsp;), not prose punctuation
         add("semicolon", SEVERITY_ERROR, match.start(), match.group(),
             "period, or split the sentence")
 

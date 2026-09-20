@@ -165,3 +165,50 @@ def test_bullet_marker_is_a_single_asterisk_violation():
 def test_lone_asterisk_is_a_single_violation():
     found = [v for v in lint.lint("Some text * more text.") if v.rule == "asterisk"]
     assert len(found) == 1
+
+
+# --- Fix wave, finding 4 ---------------------------------------------------
+#
+# The hashtag rule matched any #word, so a markdown link's URL anchor
+# (...#configuration) was flagged as a hashtag to remove, which fails CI on
+# an ordinary documentation page under --fail-on-lint. mask_code covers
+# fences and inline code, not URLs, so nothing upstream caught this either.
+
+
+def test_ignores_hashtag_in_a_markdown_link_url():
+    text = "See [the config guide](https://docs.example.com/guide#configuration)."
+    assert "hashtag" not in rules(text)
+
+
+def test_ignores_hashtag_at_the_end_of_a_bare_url():
+    assert "hashtag" not in rules("Jump to https://example.com/page#top for details.")
+
+
+def test_still_flags_a_genuine_mid_line_hashtag_after_the_url_fix():
+    # Existing coverage (test_flags_hashtag_mid_line) must stay green; this
+    # is the same property stated as a regression guard for this fix.
+    assert "hashtag" in rules("Ship it #buildinpublic")
+
+
+def test_still_ignores_a_heading_hashtag_after_the_url_fix():
+    assert rules("# Heading\n\nPlain prose here.\n") == []
+
+
+# The reviewer's second, lower-frequency instance of the same shape:
+# &nbsp; and other HTML/XML character references trip the semicolon rule,
+# since the semicolon that closes one is ordinary punctuation syntax to the
+# regex, not prose punctuation.
+
+
+def test_ignores_semicolon_closing_an_html_entity():
+    assert "semicolon" not in rules("Line one&nbsp;line two.")
+
+
+def test_ignores_semicolon_closing_a_named_html_entity_other_than_nbsp():
+    assert "semicolon" not in rules("Cats&mdash;and dogs.")
+
+
+def test_still_flags_a_real_semicolon_near_an_entity():
+    found = [v for v in lint.lint("It runs fast&nbsp;now; the cost is low.")
+             if v.rule == "semicolon"]
+    assert len(found) == 1
