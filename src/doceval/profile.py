@@ -19,6 +19,14 @@ MIN_LEVELS = 2
 MAX_LEVELS = 10
 PROFILE_DIR = Path(__file__).resolve().parent / "profiles"
 
+# The SDK's NoulCriteria (typesafe_sdk._core.question_types) is a closed
+# TypedDict accepting only these two keys. Any other key reaches
+# questions.build_questions -> Noul(criteria=...) and fails there, deep
+# inside evaluate_documents, as a raw pydantic traceback rather than this
+# module's own ProfileError -- which is exactly the surfacing-as-a-422 this
+# module's docstring says validation exists to prevent.
+GATE_CRITERIA_KEYS = frozenset({"true", "false"})
+
 
 class ProfileError(ValueError):
     """A profile failed validation. The message names the offending field."""
@@ -211,8 +219,14 @@ def _parse_gate(raw: object, source: str) -> Gate | None:
     for key in criteria:
         if not isinstance(key, str):
             raise ProfileError(
-                f'{where}: criteria key {key!r} must be quoted in YAML — '
+                f'{where}: criteria key {key!r} must be quoted in YAML, '
                 f'write "true" and "false" as strings, not bare booleans'
+            )
+        if key not in GATE_CRITERIA_KEYS:
+            allowed = " and ".join(f'"{k}"' for k in sorted(GATE_CRITERIA_KEYS))
+            raise ProfileError(
+                f"{where}: criteria key {key!r} is not allowed. "
+                f"A gate's criteria only accept {allowed} as keys."
             )
 
     return Gate(
