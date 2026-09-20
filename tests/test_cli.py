@@ -193,17 +193,29 @@ def test_lint_and_profiles_work_without_key_or_network(runner, post, monkeypatch
 def test_json_format_stdout_is_only_json(runner, post, stub_api):
     """Nothing but the JSON payload may reach stdout in --format json.
 
-    Asserting "valid JSON" alone (as in test_eval_json_output_is_valid)
-    would still pass if a stray progress line landed on stdout AFTER a
-    complete, separately-parseable JSON blob never printed at all being the
-    bug -- json.loads on the *entire* captured output is the assertion that
-    actually fails the moment anything else is mixed in, because a stray
-    line anywhere makes the whole stream fail to parse as one JSON value.
+    Two things were wrong with the first version of this test, both found
+    in review:
+
+    1. It asserted against `result.output`, but in click 8.2+ that's stdout
+       and stderr MIXED in the order they were written (`Result.output`'s
+       own docstring says so; `mix_stderr` was removed). Swapping
+       `_load_all`'s console for a plain `Console()` -- i.e. reintroducing
+       the exact bug this test claims to pin -- would leave it green,
+       because the contaminating text would just get folded into the same
+       string being parsed. `result.stdout` and `result.stderr` are the
+       independent streams that can actually tell them apart.
+    2. Its corpus was one clean document, so `_load_all` never printed an
+       error line at all -- there was nothing that *could* contaminate
+       stdout even with broken stream routing. Adding a source that fails
+       to load gives the test something real to fail to keep off stdout.
     """
-    result = runner.invoke(cli.main, ["eval", post, "--format", "json", "--no-cache"])
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
+    result = runner.invoke(
+        cli.main, ["eval", post, "missing.md", "--format", "json", "--no-cache"]
+    )
+    payload = json.loads(result.stdout)
     assert payload["documents"][0]["id"] == post
+    assert "missing.md" in result.stderr
+    assert "not found" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -268,3 +280,72 @@ def test_eval_rejects_api_key_flag(runner, post):
     result = runner.invoke(cli.main, ["eval", post, "--api-key", "sk-whatever"])
     assert result.exit_code != 0
     assert "no such option" in result.output.lower()
+
+
+# --- Fix round 1 -------------------------------------------------------
+#
+# Finding 1: --fail-under silently passed documents nobody could score
+# (NOT_PROSE from a failed gate, UNSCORED from every dimension falling
+# below --min-confidence), because the old check only compared a composite
+# that existed. Those are exactly the documents a CI gate most needs to
+# catch, since "the model couldn't judge this" is not the same claim as
+# "the model judged this and it passed."
+
+
+def test_fail_under_treats_a_gate_failure_as_a_breach(runner, post, monkeypatch):
+    async def not_prose(documents, prof, **kwargs):
+        answers = {**ANSWERS, "is_finished_prose": {"type": "noul", "noul": 0.0}}
+        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
+                for d in documents]
+
+    monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", not_prose)
+    result = runner.invoke(cli.main, ["eval", post, "--fail-under", "0.9", "--no-cache"])
+    assert result.exit_code == 1
+    assert "NOT_PROSE" in result.output
+
+
+def test_fail_under_treats_unscored_as_a_breach(runner, post, monkeypatch):
+    async def unscored(documents, prof, **kwargs):
+        # Gate passes, but every dimension's confidence sits below
+        # --min-confidence's default of 0.6, so none of them are included
+        # in the weighted mean and the composite comes back None.
+        answers = {
+            k: ({**v, "confidence": 0.0} if k != "is_finished_prose" else v)
+            for k, v in ANSWERS.items()
+        }
+        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
+                for d in documents]
+
+    monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
+    monkeypatch.setattr(cli.evaluate, "evaluate_documents", unscored)
+    result = runner.invoke(cli.main, ["eval", post, "--fail-under", "0.9", "--no-cache"])
+    assert result.exit_code == 1
+    assert "UNSCORED" in result.output
+
+
+def test_fail_under_still_passes_a_document_above_threshold(runner, post, stub_api):
+    """Control for the two tests above: a real, passing composite must
+    still exit 0. Proves the NOT_PROSE/UNSCORED fix didn't turn
+    --fail-under into an unconditional failure.
+    """
+    result = runner.invoke(cli.main, ["eval", post, "--fail-under", "0.5", "--no-cache"])
+    assert result.exit_code == 0
+
+
+# Finding 2: `lint` only exited 2 when EVERY path failed to load
+# (`if failures and not documents`), so one typo'd path alongside a good
+# one reported success. `eval` was already stricter -- any failure exits
+# 2 regardless of the rest of the run -- so the same mistake was caught in
+# one command and silently swallowed in the other.
+
+
+def test_lint_exits_two_on_an_unreadable_source_even_with_a_good_one(
+    runner, post, monkeypatch
+):
+    monkeypatch.delenv(config.API_KEY_ENV, raising=False)
+    result = runner.invoke(cli.main, ["lint", post, "missing.md"])
+    assert result.exit_code == 2
+    assert "not found" in result.output
+    # The good file's own violation list still printed alongside the error.
+    assert f"{Path(post).name}" in result.output

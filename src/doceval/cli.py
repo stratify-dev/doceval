@@ -74,7 +74,12 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
                 f'"{violation.text}"  [dim]→ {violation.suggestion}[/dim]'
             )
 
-    if failures and not documents:
+    # A source that fails to load is an operational error even when other
+    # paths succeeded and even when --fail-on-lint would otherwise pass;
+    # this matches eval, where any failure exits 2 regardless of the rest
+    # of the run. The per-file results above still print, so a partial
+    # report survives even though the exit code reports the failure.
+    if failures:
         sys.exit(EXIT_ERROR)
     if fail_on_lint and total_errors:
         sys.exit(EXIT_THRESHOLD)
@@ -202,8 +207,14 @@ def _dump(documents, directory: Path) -> None:
 def _exit_code(results, fail_under: float | None, fail_on_lint: bool) -> int:
     if any(r.error is not None for r in results):
         return EXIT_ERROR
+    # A document with no composite (gate failure -> NOT_PROSE, or every
+    # dimension flagged needs_review -> UNSCORED) has not met a threshold
+    # the caller explicitly asked for. Treating a missing composite as a
+    # pass would let exactly the documents the model could not judge sail
+    # through a CI gate; report.py already renders NOT_PROSE/UNSCORED
+    # distinctly from a low score, so this doesn't get lumped in as "0.0".
     if fail_under is not None and any(
-        r.composite is not None and r.composite < fail_under for r in results
+        r.composite is None or r.composite < fail_under for r in results
     ):
         return EXIT_THRESHOLD
     if fail_on_lint and any(r.errors for r in results):
