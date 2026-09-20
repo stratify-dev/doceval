@@ -2,6 +2,13 @@ import pytest
 
 from doceval import config
 
+EXPECTED_MISSING_KEY_MESSAGE = """TYPESAFE_API_KEY is not set
+
+  export TYPESAFE_API_KEY=sk-...     create a key at https://console.typesafe.ai/keys
+  or copy .env.example to .env and fill it in
+
+  doceval lint needs no key and works now."""
+
 
 def test_require_api_key_returns_value(monkeypatch):
     monkeypatch.setenv(config.API_KEY_ENV, "sk-test-123")
@@ -19,6 +26,7 @@ def test_require_api_key_raises_when_missing(monkeypatch):
         config.require_api_key()
     assert config.API_KEY_ENV in exc.value.message
     assert "console.typesafe.ai/keys" in exc.value.message
+    assert exc.value.message == EXPECTED_MISSING_KEY_MESSAGE
 
 
 def test_require_api_key_raises_when_blank(monkeypatch):
