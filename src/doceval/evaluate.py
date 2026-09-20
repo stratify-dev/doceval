@@ -104,62 +104,73 @@ async def evaluate_documents(
     async with _new_client() as client:
 
         async def run(document: Document) -> Outcome:
-            if on_start is not None:
-                on_start(document)
-
-            key = cache_mod.cache_key(document.text, fingerprint)
-            if use_cache:
-                hit = cache_mod.read(directory, key)
-                if hit is not None:
-                    outcome = Outcome(
-                        document=document, answers=hit.get("answers", {}),
-                        model=hit.get("model", model), usage={}, cached=True,
-                    )
-                    if on_done is not None:
+            def finish(outcome: Outcome) -> Outcome:
+                if on_done is not None:
+                    try:
                         on_done(outcome)
-                    return outcome
+                    except Exception:
+                        # A broken progress callback must not cost this
+                        # document its already-computed result.
+                        pass
+                return outcome
 
-            async with semaphore:
-                try:
-                    response = await client.system_one(
-                        build_state(document, prof), questions
+            try:
+                if on_start is not None:
+                    on_start(document)
+
+                key = cache_mod.cache_key(document.text, fingerprint)
+                if use_cache:
+                    hit = cache_mod.read(directory, key)
+                    if hit is not None:
+                        return finish(Outcome(
+                            document=document, answers=hit.get("answers", {}),
+                            model=hit.get("model", model), usage={}, cached=True,
+                        ))
+
+                async with semaphore:
+                    try:
+                        response = await client.system_one(
+                            build_state(document, prof), questions
+                        )
+                    except TypeSafeUnprocessableEntityError as error:
+                        # A 422 is a profile bug, not a runtime one. Name the field.
+                        return finish(Outcome(
+                            document=document, answers=None, model=model,
+                            error=describe_invalid_request(error),
+                        ))
+                    except Exception as error:  # isolate one document's failure
+                        detail = getattr(error, "request_id", None)
+                        suffix = f" (request {detail})" if detail else ""
+                        return finish(Outcome(
+                            document=document, answers=None, model=model,
+                            error=f"{type(error).__name__}: {error}{suffix}",
+                        ))
+
+                payload = response.raw_http_response.json()
+                answers = dict(payload.get("answers", {}))
+                answered_model = str(payload.get("model", model))
+                usage = dict(payload.get("usage", {}))
+
+                if use_cache:
+                    cache_mod.write(
+                        directory, key,
+                        {"model": answered_model, "answers": answers, "usage": usage},
                     )
-                except TypeSafeUnprocessableEntityError as error:
-                    # A 422 is a profile bug, not a runtime one. Name the field.
-                    outcome = Outcome(
-                        document=document, answers=None, model=model,
-                        error=describe_invalid_request(error),
-                    )
-                    if on_done is not None:
-                        on_done(outcome)
-                    return outcome
-                except Exception as error:  # isolate one document's failure
-                    detail = getattr(error, "request_id", None)
-                    suffix = f" (request {detail})" if detail else ""
-                    outcome = Outcome(
-                        document=document, answers=None, model=model,
-                        error=f"{type(error).__name__}: {error}{suffix}",
-                    )
-                    if on_done is not None:
-                        on_done(outcome)
-                    return outcome
 
-            payload = response.raw_http_response.json()
-            answers = dict(payload.get("answers", {}))
-            answered_model = str(payload.get("model", model))
-            usage = dict(payload.get("usage", {}))
-
-            if use_cache:
-                cache_mod.write(
-                    directory, key,
-                    {"model": answered_model, "answers": answers, "usage": usage},
-                )
-
-            outcome = Outcome(
-                document=document, answers=answers, model=answered_model, usage=usage,
-            )
-            if on_done is not None:
-                on_done(outcome)
-            return outcome
+                return finish(Outcome(
+                    document=document, answers=answers, model=answered_model,
+                    usage=usage,
+                ))
+            except Exception as error:
+                # Nothing above this point may escape into gather: a raising
+                # on_start, a corrupt cache read, or a malformed response must
+                # land as this document's own error, not take the whole run
+                # down with it. A raising on_done is already swallowed inside
+                # finish(), so a document that was actually evaluated keeps
+                # its real answers instead of being overwritten here.
+                return finish(Outcome(
+                    document=document, answers=None, model=model,
+                    error=f"{type(error).__name__}: {error}",
+                ))
 
         return list(await asyncio.gather(*(run(d) for d in documents)))

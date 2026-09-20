@@ -204,11 +204,13 @@ def test_client_is_built_with_a_retry_policy():
 async def test_cache_hits_do_not_consume_a_concurrency_slot(monkeypatch, tmp_path):
     """A fully cached corpus makes zero client calls, even with concurrency=1.
 
-    If the cache check were moved inside the semaphore, hits would still all
-    resolve (cache reads are fast and uncontended), so "all documents
-    resolve" alone would not catch that regression. Asserting the client was
-    never touched does: it only holds when the cache check happens before a
-    slot is ever requested.
+    This pins that cache hits never reach client.system_one, which is a real
+    property worth pinning on its own. It does NOT prove the cache check runs
+    before the semaphore is acquired -- moving the check inside `async with
+    semaphore:` would still make zero client calls and pass this same
+    assertion, since a cache hit never needs the client either way. See
+    test_cache_check_happens_before_the_semaphore_is_acquired below for the
+    test that actually discriminates on ordering.
     """
     warm_client = FakeClient()
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: warm_client)
@@ -319,3 +321,92 @@ async def test_a_422_message_never_degrades_to_a_bare_status(monkeypatch, tmp_pa
     assert "questions.concision.criteria" in outcome.error
     assert "too many levels" in outcome.error
     assert outcome.error.strip() not in {"422", "unprocessable", "Unprocessable Entity"}
+
+
+# --- Fix round 1 -------------------------------------------------------
+#
+# Findings from the first review pass: the isolation net had holes outside
+# the client-call try/except (on_start, on_done, response parsing, the cache
+# write), so a raising callback or a malformed response could escape
+# asyncio.gather and take the whole run down. And an earlier property test's
+# docstring overclaimed what its assertion actually pinned.
+
+
+async def test_cache_check_happens_before_the_semaphore_is_acquired(monkeypatch, tmp_path):
+    """Cached documents must not queue behind a slow live one.
+
+    With concurrency=1, a live document first in input order, and several
+    already-cached documents behind it, every cached document's on_done must
+    fire before the live document's does. If the cache check sat inside
+    `async with semaphore:`, the live document would hold the sole slot for
+    its whole delay and the cached documents would have to wait behind it,
+    so their on_done calls would fire only after the live one's.
+    """
+    warm_client = FakeClient()
+    monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: warm_client)
+    cached_docs = make_docs(3)
+    await evaluate.evaluate_documents(cached_docs, PROF, cache_dir=tmp_path)  # populate cache
+
+    live_doc = sources.Document("live.md", "Live", "Body live.", "file", None)
+    docs = [live_doc, *cached_docs]
+
+    slow_client = FakeClient(delay=0.1)
+    monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: slow_client)
+
+    order = []
+    await evaluate.evaluate_documents(
+        docs, PROF, concurrency=1, cache_dir=tmp_path,
+        on_done=lambda outcome: order.append(outcome.document.id),
+    )
+
+    live_position = order.index("live.md")
+    cached_positions = [order.index(doc.id) for doc in cached_docs]
+    assert live_position > max(cached_positions)
+
+
+async def test_a_raising_on_start_does_not_abort_the_run(monkeypatch, tmp_path):
+    """A progress callback that raises for one document must not lose the
+    other documents' outcomes or crash the run."""
+    client = FakeClient()
+    monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
+
+    def flaky_on_start(document):
+        if document.id == "doc1.md":
+            raise RuntimeError("progress display broke")
+
+    outcomes = await evaluate.evaluate_documents(
+        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False,
+        on_start=flaky_on_start,
+    )
+
+    assert len(outcomes) == 3
+    assert outcomes[0].error is None
+    assert outcomes[0].answers["a"]["score"] == 1.0
+    assert outcomes[2].error is None
+    assert outcomes[2].answers["a"]["score"] == 1.0
+    assert outcomes[1].error is not None
+    assert "progress display broke" in outcomes[1].error
+
+
+async def test_a_raising_on_done_does_not_abort_the_run(monkeypatch, tmp_path):
+    """A progress callback that raises after a document finishes must not
+    lose the other documents' outcomes, crash the run, or even overwrite the
+    raising document's own already-computed answers -- the document was
+    evaluated correctly; only the display of that fact broke."""
+    client = FakeClient()
+    monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
+
+    def flaky_on_done(outcome):
+        if outcome.document.id == "doc1.md":
+            raise RuntimeError("progress display broke")
+
+    outcomes = await evaluate.evaluate_documents(
+        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False,
+        on_done=flaky_on_done,
+    )
+
+    assert len(outcomes) == 3
+    assert all(o.error is None for o in outcomes)
+    assert outcomes[0].answers["a"]["score"] == 1.0
+    assert outcomes[1].answers["a"]["score"] == 1.0
+    assert outcomes[2].answers["a"]["score"] == 1.0
