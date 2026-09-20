@@ -31,14 +31,41 @@ BAR_FILLED = "█"
 BAR_EMPTY = "░"
 LABEL_WIDTH = 20
 
+# The violation detail row's fixed columns, left to right: a padded
+# "line N" prefix, the rule name, the quoted violation text, then "→ " and
+# the suggestion. Named here, and used by both the row and the arithmetic
+# below, so the two can never drift back out of sync the way the text cap
+# and its column already did once.
+DETAIL_LINE_WIDTH = 15
+DETAIL_RULE_WIDTH = 16
+DETAIL_ARROW = "→ "
+
+# A piped console has no TTY, and Rich's own default width without one is
+# 80 columns -- the width real usage (CI logs, `doceval | less`, redirected
+# output) actually renders at, regardless of the terminal this was written
+# in.
+PIPED_CONSOLE_WIDTH = 80
+
 # A violation's text used to be exactly one character (the old asterisk rule
 # matched single characters). It is now an unbounded span, so it needs a cap
 # before it reaches a fixed-width report column. The cap must agree with that
-# column: the violation detail row quotes the cleaned text and ljust(20)s it,
-# so the cap leaves room for the two quote characters within 20 (18 + 2).
-# Widen one and the other must widen with it, or a maximal violation still
-# overruns the "→ suggestion" column it was capped to protect.
+# column: the violation detail row quotes the cleaned text and ljust()s it to
+# DETAIL_TEXT_WIDTH (18 + 2 quote characters = 20). Widen one and the other
+# must widen with it, or a maximal violation still overruns the row.
 VIOLATION_TEXT_WIDTH = 18
+DETAIL_TEXT_WIDTH = VIOLATION_TEXT_WIDTH + 2  # the two quote characters
+
+# lint.py's fixed rule suggestions were never capped either, and several are
+# long enough on their own to overrun a piped console: asterisk's is 37
+# characters, and em_dash's and semicolon's are 29 -- the three most common
+# violations in practice. Capping the text column (above) was necessary but
+# not sufficient; the suggestion after it needs the same treatment, sized to
+# whatever the other fixed columns and the arrow leave inside 80 columns.
+SUGGESTION_WIDTH = (
+    PIPED_CONSOLE_WIDTH - DETAIL_LINE_WIDTH - DETAIL_RULE_WIDTH
+    - DETAIL_TEXT_WIDTH - len(DETAIL_ARROW)
+)
+
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 
@@ -86,17 +113,26 @@ def _dimension_bar_style(dimension: DimensionResult) -> str:
 
 
 def _clean_violation_text(text: str, width: int = VIOLATION_TEXT_WIDTH) -> str:
-    """Collapse whitespace runs and cap length before a violation hits a row.
+    """Collapse whitespace runs and cap length before text hits a fixed column.
 
-    Two defects reach this text unless it is cleaned first. The asterisk
-    rule now matches a whole span rather than one character, so an entire
-    italic paragraph can arrive as a single violation's text; rendered
-    verbatim it would blow out the fixed-width column and wrap the row.
-    Second, lint.mask_code blanks code with spaces of equal length to keep
-    offsets exact, so a span crossing inline code carries a run of blanks
-    in its text (e.g. "*span across        here*"). Collapsing whitespace
-    runs to one space fixes both the visible gap and, combined with the
-    length cap, the column width.
+    Used for both a violation's own text and, at a different width, its
+    suggestion (see SUGGESTION_WIDTH) -- both are strings a fixed-width
+    report column has to absorb without wrapping the row.
+
+    Two defects reach violation text unless it is cleaned first. The
+    asterisk rule now matches a whole span rather than one character, so an
+    entire italic paragraph can arrive as a single violation's text;
+    rendered verbatim it would blow out the fixed-width column and wrap the
+    row. Second, lint.mask_code blanks code with spaces of equal length to
+    keep offsets exact, so a span crossing inline code carries a run of
+    blanks in its text (e.g. "*span across        here*"). Collapsing
+    whitespace runs to one space fixes both the visible gap and, combined
+    with the length cap, the column width.
+
+    A suggestion string has neither defect (lint.py's suggestions are
+    static, clean text), but several are long enough on their own to
+    overrun what's left of an 80-column row after the other fixed columns,
+    so the same cap applies to it too.
     """
     collapsed = _WHITESPACE_RUN.sub(" ", text).strip()
     if len(collapsed) <= width:
@@ -167,11 +203,12 @@ def _render_one(console: Console, result: DocumentResult, compact: bool) -> None
 
     for violation in result.errors:
         cleaned = _clean_violation_text(violation.text)
+        suggestion = _clean_violation_text(violation.suggestion, width=SUGGESTION_WIDTH)
         detail = Text()
-        detail.append(f"     line {violation.line}".ljust(15), style="dim")
-        detail.append(violation.rule.replace("_", " ").ljust(16))
-        detail.append(f'"{cleaned}"'.ljust(20))
-        detail.append(f"→ {violation.suggestion}", style="dim")
+        detail.append(f"     line {violation.line}".ljust(DETAIL_LINE_WIDTH), style="dim")
+        detail.append(violation.rule.replace("_", " ").ljust(DETAIL_RULE_WIDTH))
+        detail.append(f'"{cleaned}"'.ljust(DETAIL_TEXT_WIDTH))
+        detail.append(f"{DETAIL_ARROW}{suggestion}", style="dim")
         console.print(detail)
 
 

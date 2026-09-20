@@ -309,33 +309,83 @@ def test_render_documents_shows_blanked_code_span_without_a_run_of_spaces():
     assert "across  " not in detail_line  # no leftover run from the masked code
 
 
-def test_violation_detail_rows_align_and_never_wrap_at_a_piped_width_80():
-    """Fix round 1, finding 1: the truncation cap must agree with the
-    ljust(20) column it protects. A cap that leaves the quoted text longer
-    than the column pushes "→ suggestion" out to a ragged position, and at
-    Rich's un-piped default width of 80 that ragged row wraps onto a second
-    line — exactly the layout blowout the cap exists to prevent. This
-    renders three violations of very different original lengths to a
-    non-terminal, width-80 console and checks the arrow lands in the same
-    column every time, with no line wrapping.
-    """
-    violations = (
-        lint.Violation("asterisk", "error", 1, 1, "x", "rewrite for emphasis"),
-        lint.Violation("asterisk", "error", 2, 1, "a medium span of words here", "rewrite for emphasis"),
-        lint.Violation("asterisk", "error", 3, 1, "x" * 500, "rewrite for emphasis"),
-    )
-    result = make_result(violations=violations)
+def _render_lines(result, width=80):
     buffer = io.StringIO()
-    console = Console(file=buffer, width=80)
+    console = Console(file=buffer, width=width)
     report.render_documents(console, [result])
-    lines = buffer.getvalue().splitlines()
+    return buffer.getvalue().splitlines()
+
+
+def test_violation_detail_rows_align_and_never_wrap_at_a_piped_width_80():
+    """Fix round 1, findings 1 and 2 (round 2): every fixed-width piece of
+    the detail row -- the text cap, and then the suggestion after it -- has
+    to agree with the columns it renders into, or a maximal row overruns
+    them and Rich wraps it onto a second line at a piped console's default
+    width of 80.
+
+    This is built from lint.py's own real data rather than hand-picked
+    fixtures, because a fixture with short suggestion strings cannot catch
+    a cap that's wrong for the long ones: the fixed ERROR-severity
+    suggestions (COMMON_WORDS is warning-severity and never reaches this
+    block) plus every BANNED_WORDS and SETUP_PHRASES suggestion, each paired
+    with a maximal-length violation text, is the actual worst case in
+    practice -- and asterisk, em_dash, and semicolon, whose suggestions are
+    the longest here, are also the three most common violations in real
+    prose.
+
+    Neither "every line <= 80" nor "one line contains this violation's rule
+    name" proves nothing wrapped: Rich splits an overlong row into two
+    segments each under 80, and only the first segment carries the rule
+    name the second is a bare continuation, so both a naive length check and
+    a naive per-violation substring count silently pass while the row is
+    broken across two lines regardless. The property that actually holds a
+    wrap accountable is the total output line count: with none of these
+    violations wrapped, the total must be exactly the no-violation baseline
+    plus one line per violation. Verified this catches a real regression by
+    simulating the un-capped suggestion this round fixes: it added 42
+    violations across the baseline document and produced 56 lines instead
+    of the expected 52 -- 4 rows had wrapped.
+    """
+    fixed_error_suggestions = [
+        "comma, period, or parentheses",  # em_dash
+        "period, or split the sentence",  # semicolon
+        "'-' for bullets, rewrite for emphasis",  # asterisk
+        "remove",  # hashtag
+        "state the point directly",  # not_just
+    ]
+    real_suggestions = sorted(
+        {*fixed_error_suggestions, *lint.SETUP_PHRASES.values(), *lint.BANNED_WORDS.values()}
+    )
+    violations = tuple(
+        lint.Violation("worst_case", "error", index + 1, 1, "x" * 500, suggestion)
+        for index, suggestion in enumerate(real_suggestions)
+    )
+    baseline_lines = _render_lines(make_result(violations=()))
+    lines = _render_lines(make_result(violations=violations))
 
     assert all(len(line) <= 80 for line in lines)
+    # The real "did anything wrap" check: one extra output line per
+    # violation over the no-violation baseline, no more.
+    assert len(lines) == len(baseline_lines) + len(violations)
 
-    detail_lines = [line for line in lines if "asterisk" in line]
-    assert len(detail_lines) == 3  # one line per violation: none wrapped
+    detail_lines = [line for line in lines if "worst case" in line]
     arrow_columns = {line.index("→") for line in detail_lines}
     assert len(arrow_columns) == 1  # the arrow lands in the same column every time
+
+
+def test_suggestion_width_is_derived_to_exactly_fill_an_80_column_row():
+    total = (
+        report.DETAIL_LINE_WIDTH + report.DETAIL_RULE_WIDTH + report.DETAIL_TEXT_WIDTH
+        + len(report.DETAIL_ARROW) + report.SUGGESTION_WIDTH
+    )
+    assert total == report.PIPED_CONSOLE_WIDTH
+
+
+def test_longest_real_suggestion_is_truncated_to_the_suggestion_width():
+    cleaned = report._clean_violation_text(
+        "'-' for bullets, rewrite for emphasis", width=report.SUGGESTION_WIDTH)
+    assert len(cleaned) <= report.SUGGESTION_WIDTH
+    assert cleaned.endswith("…")
 
 
 # --- Requirement B: corpus view shows the sample count per group ------------
