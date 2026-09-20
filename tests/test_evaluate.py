@@ -1,6 +1,8 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
+from tenacity.stop import stop_before_delay
 
 from doceval import evaluate, sources
 from doceval import profile as profile_mod
@@ -187,20 +189,60 @@ async def test_a_422_reports_the_offending_field(monkeypatch, tmp_path):
 
 
 def test_client_is_built_with_a_retry_policy():
-    assert evaluate.RETRY.max_retries == 3
-    assert evaluate.RETRY.respect_retry_after is True
-    assert 429 in evaluate.RETRY.http_statuses
-    assert 529 in evaluate.RETRY.http_statuses
+    policy = evaluate._retry_policy(evaluate.API_TIMEOUT)
+    assert policy.max_retries == 3
+    assert policy.respect_retry_after is True
+    assert 429 in policy.http_statuses
+    assert 529 in policy.http_statuses
 
 
-def test_retry_budget_leaves_room_for_a_retry_after_one_full_attempt():
-    """RETRY.timeout is the TOTAL retry budget, not a per-attempt timeout
-    (typesafe_sdk._core.retry.RetryPolicy.timeout). Setting it equal to
-    API_TIMEOUT would let a single slow attempt consume the whole budget
-    and leave no room for tenacity to ever retry a timeout -- the exact
-    failure finding 3 exists to prevent.
+# --- Fix wave, finding 3 re-review -----------------------------------------
+#
+# The retry budget used to be a fixed constant (180.0), which cleared the
+# invariant below only for the default api_timeout (60.0). --api-timeout is
+# user-settable, so a caller raising it past 180 silently reintroduced the
+# exact dead-retry bug finding 3 existed to fix, in the flag it added. The
+# budget now has to be DERIVED from api_timeout, so it holds at every value,
+# not just the default one a fixed-constant test would keep pinned to.
+#
+# A prior version of this test asserted `evaluate.RETRY.timeout >
+# evaluate.API_TIMEOUT` -- comparing two constants to each other, which
+# stays true no matter what value either constant holds, and so cannot
+# fail no matter how wrong the derivation is for any api_timeout other than
+# the one baked into the constants. This project has already found seven
+# instances of that exact assertion shape (something that holds while its
+# bug is present); this was an eighth. The test below instead drives the
+# REAL mechanism tenacity uses to decide whether to retry
+# (tenacity.stop.stop_before_delay, wired in via
+# typesafe_sdk._core.retry.RetryPolicy._stop) at several api_timeout
+# values, including several well above the old fixed 180.0, and checks it
+# would actually let a retry fire.
+
+
+@pytest.mark.parametrize("api_timeout", [1.0, 10.0, 60.0, 90.0, 181.0, 300.0, 600.0])
+def test_retry_budget_leaves_room_for_a_retry_after_one_full_attempt(api_timeout):
+    """Simulate the moment right after one full-length attempt has just
+    timed out: seconds_since_start == api_timeout, with the resulting
+    backoff delay about to be slept. stop_before_delay(budget) returning
+    False there means tenacity proceeds with the retry; True means the
+    budget was already exhausted and no retry ever fires -- the bug this
+    test exists to catch, at every api_timeout, not only the default.
     """
-    assert evaluate.RETRY.timeout > evaluate.API_TIMEOUT
+    budget = evaluate._retry_budget(api_timeout)
+    stop = stop_before_delay(budget)
+    state = SimpleNamespace(
+        seconds_since_start=api_timeout,
+        upcoming_sleep=evaluate.RETRY_BACKOFF_INITIAL,
+    )
+    assert stop(state) is False
+
+
+def test_retry_policy_timeout_matches_the_derived_budget():
+    """_new_client must actually use _retry_budget's number, not merely
+    have it exist unused somewhere."""
+    policy = evaluate._retry_policy(250.0)
+    assert policy.timeout == evaluate._retry_budget(250.0)
+    assert policy.timeout == pytest.approx(750.0)
 
 
 # --- Fix wave, finding 3 --------------------------------------------------
@@ -236,6 +278,26 @@ async def test_api_timeout_override_reaches_the_client(monkeypatch, tmp_path):
         make_docs(1), PROF, cache_dir=tmp_path, use_cache=False, api_timeout=5.0)
 
     assert captured.get("timeout") == 5.0
+
+
+def test_new_client_derives_the_retry_budget_from_its_own_timeout(monkeypatch):
+    """Exercises the real _new_client (not monkeypatched away, unlike the
+    two tests above), monkeypatching only the SDK's AsyncTypeSafeClient
+    underneath it, to prove the retry policy that actually reaches the SDK
+    carries a budget derived from the timeout _new_client was given --
+    not a policy built once from the module default and reused regardless
+    of what api_timeout the caller passed.
+    """
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(evaluate, "AsyncTypeSafeClient", fake_client)
+    evaluate._new_client(timeout=250.0)
+
+    assert captured["retry"].timeout == evaluate._retry_budget(250.0)
 
 
 # --- Properties beyond the brief -------------------------------------------

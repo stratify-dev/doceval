@@ -34,7 +34,7 @@ DEFAULT_CONCURRENCY = 8
 # (10.0s, typesafe_sdk.constants.DEFAULT_TIMEOUT) -- far too short for the
 # single request this module sends per document: up to MAX_DOCUMENT_TOKENS
 # (28k, see sources.py) of state plus eleven questions, all in one call.
-# This is distinct from RETRY.timeout below, which is the TOTAL budget
+# This is distinct from the retry budget below, which is the TOTAL budget
 # across every attempt and its backoff, not a per-attempt timeout. 60s is a
 # practical default for that request shape; --api-timeout overrides it per
 # run for a slower model or a corpus of unusually large documents.
@@ -42,13 +42,45 @@ API_TIMEOUT = 60.0
 
 # 408, 429, and every 5xx retry by default, which covers 529 Overloaded.
 # respect_retry_after honors the header when the response carries one.
-# timeout=180.0 (not 60.0) is deliberate: setting the total retry budget
-# equal to the per-attempt timeout above would let a single slow attempt
-# consume the whole budget and leave tenacity no room to ever retry a
-# timeout -- exactly the failure this fix exists to prevent. 180s leaves
-# room for one full-length attempt plus at least one retry with backoff.
-RETRY = RetryPolicy(max_retries=3, backoff_initial=0.5, backoff_max=8.0,
-                    respect_retry_after=True, timeout=180.0)
+RETRY_MAX_RETRIES = 3
+RETRY_BACKOFF_INITIAL = 0.5
+RETRY_BACKOFF_MAX = 8.0
+
+
+def _retry_budget(api_timeout: float) -> float:
+    """The total retry budget for a client built with this api_timeout.
+
+    RetryPolicy.timeout is measured from the start of the FIRST attempt, not
+    reset per attempt (typesafe_sdk._core.retry.RetryPolicy.timeout), and
+    tenacity's stop_before_delay refuses the next retry once elapsed time
+    plus the upcoming backoff would reach that budget
+    (tenacity.stop.stop_before_delay). So THE INVARIANT THAT MUST HOLD: the
+    budget must exceed one full-length attempt (api_timeout) plus its
+    backoff delay, or the very first timeout consumes the whole budget and
+    no retry can ever fire -- the bug this function exists to prevent.
+
+    This used to be a fixed constant (180.0), which only satisfied that
+    invariant for the default api_timeout of 60.0. Once --api-timeout
+    became a user-settable flag, a caller passing --api-timeout above 180
+    reintroduced the exact dead-retry bug in the flag added to fix it,
+    silently, because RETRY.timeout no longer moved with it.
+
+    Budgeting for RETRY_MAX_RETRIES full-length attempts (not
+    RETRY_MAX_RETRIES + 1, the total attempt count including the initial
+    one) leaves comfortable room for at least one retry after a
+    full-length attempt, at any api_timeout, without letting one document
+    hang for the full attempt count times its timeout.
+    """
+    return RETRY_MAX_RETRIES * api_timeout
+
+
+def _retry_policy(api_timeout: float) -> RetryPolicy:
+    """Build the retry policy for one client, budgeted for this api_timeout."""
+    return RetryPolicy(
+        max_retries=RETRY_MAX_RETRIES, backoff_initial=RETRY_BACKOFF_INITIAL,
+        backoff_max=RETRY_BACKOFF_MAX, respect_retry_after=True,
+        timeout=_retry_budget(api_timeout),
+    )
 
 
 @dataclass(frozen=True)
@@ -62,8 +94,14 @@ class Outcome:
 
 
 def _new_client(**kwargs) -> AsyncTypeSafeClient:
-    """Isolated so tests substitute a fake client."""
-    kwargs.setdefault("retry", RETRY)
+    """Isolated so tests substitute a fake client.
+
+    The retry policy is built here, from whatever timeout this call
+    carries, rather than reused from a module-level constant -- see
+    _retry_budget for why a fixed budget can't be correct for every
+    api_timeout a caller might pass.
+    """
+    kwargs.setdefault("retry", _retry_policy(kwargs.get("timeout", API_TIMEOUT)))
     return AsyncTypeSafeClient(**kwargs)
 
 
