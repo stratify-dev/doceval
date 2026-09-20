@@ -63,7 +63,13 @@ def strip_frontmatter(text: str) -> str:
     return _FRONTMATTER.sub("", text, count=1)
 
 
-def load_document(arg: str, *, timeout: float = 20.0, min_words: int = 150) -> Document:
+# 100 words, not 150: the boilerplate band sits an order of magnitude below
+# the prose band (a bare-nav page extracts a handful of words), so any
+# threshold in that gap catches JS-shell fragments just as reliably. A real
+# short documentation page has been clipped at a 150-word floor; the false
+# reject (losing a real document outright) costs more than the false accept
+# (one low-confidence score the report already flags for review).
+def load_document(arg: str, *, timeout: float = 20.0, min_words: int = 100) -> Document:
     """Resolve one argument into a Document, or raise SourceError."""
     document = (
         _fetch_url(arg, timeout=timeout)
@@ -144,11 +150,19 @@ def _page_title(html: str) -> str:
 
 def _guard(document: Document, *, min_words: int) -> None:
     if document.word_count < min_words:
-        raise SourceError(
-            f"{document.id}: extracted {document.word_count} words, "
-            f"below the {min_words} words floor. "
-            f"The page may render its content with JavaScript."
+        message = (
+            f"{document.id}: {document.word_count} words, below the "
+            f"{min_words}-word floor. Documents this short score unreliably. "
+            f"Lower the floor with --min-words if this is intentional."
         )
+        if document.origin == "url":
+            # Only a URL can plausibly be a JS shell that never sent its
+            # prose; a local file that's merely short is not that.
+            message += (
+                " The page may also render its content with JavaScript, "
+                "in which case the extractor saw only navigation."
+            )
+        raise SourceError(message)
     tokens = document.estimated_tokens
     if tokens > MAX_DOCUMENT_TOKENS:
         raise SourceError(

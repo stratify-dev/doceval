@@ -61,8 +61,9 @@ def test_missing_file_raises():
 def test_file_under_min_words_raises(tmp_path):
     path = tmp_path / "stub.md"
     path.write_text("Too short.")
-    with pytest.raises(sources.SourceError, match="150 words"):
+    with pytest.raises(sources.SourceError, match="150-word floor") as exc_info:
         sources.load_document(str(path), min_words=150)
+    assert "JavaScript" not in str(exc_info.value)
 
 
 def test_oversized_document_raises(tmp_path):
@@ -109,8 +110,9 @@ def test_url_with_no_article_text_raises(monkeypatch):
         sources, "_client",
         lambda timeout: httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    with pytest.raises(sources.SourceError, match="150 words"):
+    with pytest.raises(sources.SourceError, match="150-word floor") as exc_info:
         sources.load_document("https://example.com/spa", min_words=150)
+    assert "JavaScript" in str(exc_info.value)
 
 
 def test_estimate_tokens_is_proportional():
