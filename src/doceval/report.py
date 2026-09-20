@@ -159,6 +159,21 @@ def _clean_violation_text(text: str, width: int = VIOLATION_TEXT_WIDTH) -> str:
     return collapsed[: width - 1].rstrip() + "…"
 
 
+def _line_prefix(line: int, width: int = DETAIL_LINE_WIDTH) -> str:
+    """The detail row's "line N" column, padded like the others -- and,
+    unlike the plain `.ljust()` this replaces, capped too. `ljust` only
+    pads a short string; it does nothing once the string is already at or
+    past `width`, so an implausibly large line number (a very long
+    document) silently overran the fixed column and wrapped the row, the
+    same failure mode `_clean_violation_text` exists to prevent for the
+    text and suggestion columns next to it.
+    """
+    text = f"     line {line}"
+    if len(text) <= width:
+        return text.ljust(width)
+    return text[: width - 1] + "…"
+
+
 def render_documents(console: Console, results: list[DocumentResult], compact: bool = False) -> None:
     for result in results:
         _render_one(console, result, compact)
@@ -224,7 +239,7 @@ def _render_one(console: Console, result: DocumentResult, compact: bool) -> None
         cleaned = _clean_violation_text(violation.text)
         suggestion = _clean_violation_text(violation.suggestion, width=SUGGESTION_WIDTH)
         detail = Text()
-        detail.append(f"     line {violation.line}".ljust(DETAIL_LINE_WIDTH), style="dim")
+        detail.append(_line_prefix(violation.line), style="dim")
         detail.append(violation.rule.replace("_", " ").ljust(DETAIL_RULE_WIDTH))
         detail.append(f'"{cleaned}"'.ljust(DETAIL_TEXT_WIDTH))
         detail.append(f"{DETAIL_ARROW}{suggestion}", style="dim")

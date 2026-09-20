@@ -67,16 +67,6 @@ def _new_client(**kwargs) -> AsyncTypeSafeClient:
     return AsyncTypeSafeClient(**kwargs)
 
 
-def answers_to_dicts(response) -> dict[str, dict]:
-    """Read answers from the raw HTTP response.
-
-    Going through the raw payload keeps one shape across live runs, cached
-    runs, and fixtures, and carries through any answer kind this SDK version
-    predates.
-    """
-    return dict(response.raw_http_response.json().get("answers", {}))
-
-
 def describe_invalid_request(error: Exception) -> str:
     """Turn a 422 into a message naming the question and the field.
 

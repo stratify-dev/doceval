@@ -515,6 +515,35 @@ def test_sparkline_returns_empty_when_nothing_parses():
     assert report.sparkline({"bad": 0.5, "worse": "also-bad"}) == ""
 
 
+# --- Fix wave: a huge line number must not overrun its fixed column --------
+#
+# report.py:208's "line N" prefix used to be a bare .ljust(), which only
+# pads a short string -- it does nothing once the string already reaches or
+# exceeds the column width, so a six-digit line number silently overran the
+# 15-column budget and wrapped the row, the same failure mode
+# _clean_violation_text exists to prevent for the columns next to it.
+
+
+def test_huge_line_number_does_not_wrap_the_detail_row():
+    """A short text/suggestion pairing can't expose this: the row falls
+    well short of 80 columns regardless of the line-number column, so the
+    extra character from an unbounded 6-digit line number is lost in the
+    slack. test_suggestion_width_is_derived_to_exactly_fill_an_80_column_row
+    already proves the worst-case real text+suggestion pairing (a maximal
+    span, asterisk's suggestion -- the longest fixed one) lands at exactly
+    80 columns for an ordinary line number; reusing that same pairing here
+    means the one variable left is the line-number column, so a wrap can
+    only be caused by it.
+    """
+    text = "x" * 500
+    suggestion = "'-' for bullets, rewrite for emphasis"  # the longest fixed suggestion
+    normal = lint.Violation("asterisk", "error", 1, 1, text, suggestion)
+    huge = lint.Violation("asterisk", "error", 100_000, 1, text, suggestion)
+    baseline_lines = _render_lines(make_result(violations=(normal,)))
+    huge_lines = _render_lines(make_result(violations=(huge,)))
+    assert len(huge_lines) == len(baseline_lines)
+
+
 def test_needs_review_marker_is_not_dim():
     """The ⚠ review marker is itself the warning; muting it with an
     inherited dim (\\x1b[2;33m) defeats the point of it being coloured

@@ -98,7 +98,10 @@ async def test_respects_the_concurrency_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
     await evaluate.evaluate_documents(
         make_docs(8), PROF, concurrency=2, cache_dir=tmp_path, use_cache=False)
-    assert client.peak <= 2
+    # == pins the lower bound too: <= 2 stays true even if concurrency
+    # silently serialized down to 1, which wouldn't actually be respecting
+    # the limit, just never hitting it.
+    assert client.peak == 2
 
 
 async def test_cache_hit_skips_the_api(monkeypatch, tmp_path):
@@ -145,10 +148,6 @@ async def test_usage_is_reported(fake, tmp_path):
     outcomes = await evaluate.evaluate_documents(
         make_docs(1), PROF, cache_dir=tmp_path, use_cache=False)
     assert outcomes[0].usage["input_tokens"] == 100
-
-
-def test_answers_to_dicts_reads_the_raw_response():
-    assert evaluate.answers_to_dicts(FakeResponse(ANSWERS)) == ANSWERS
 
 
 def test_describe_invalid_request_names_the_field():
