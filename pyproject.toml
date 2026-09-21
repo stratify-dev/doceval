@@ -17,7 +17,7 @@ dependencies = [
 doceval = "doceval.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6", "pyinstaller>=6.10"]
 
 [build-system]
 requires = ["hatchling"]
@@ -32,3 +32,18 @@ asyncio_mode = "auto"
 markers = [
     "live: test makes real network requests; requires DOCEVAL_LIVE_API=1 to run",
 ]
+
+[project.urls]
+Homepage = "https://github.com/stratify-dev/doceval"
+Repository = "https://github.com/stratify-dev/doceval"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures are built inline and read better on one line than wrapped.
+"tests/*" = ["E501"]

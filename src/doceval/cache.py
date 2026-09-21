@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_CACHE_DIR = ".doceval-cache"
@@ -49,7 +49,7 @@ def write(cache_dir: Path, key: str, payload: dict) -> None:
     directory = Path(cache_dir)
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        record = {**payload, "cached_at": datetime.now(timezone.utc).isoformat()}
+        record = {**payload, "cached_at": datetime.now(UTC).isoformat()}
         temporary = directory / f"{key}.json.tmp"
         temporary.write_text(json.dumps(record), encoding="utf-8")
         temporary.replace(directory / f"{key}.json")

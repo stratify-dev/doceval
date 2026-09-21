@@ -30,7 +30,7 @@ def test_score_question_carries_instructions_and_levels():
 def test_gate_question_carries_criteria():
     criteria = questions.build_questions(PROF)["is_prose"].criteria
     # The SDK may keep a plain dict or wrap it in a model; assert the value.
-    value = criteria["true"] if isinstance(criteria, dict) else getattr(criteria, "true")
+    value = criteria["true"] if isinstance(criteria, dict) else criteria.true
     assert value == "yes"
 
 

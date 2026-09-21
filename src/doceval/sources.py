@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -136,7 +136,7 @@ def _fetch_url(url: str, *, timeout: float) -> Document:
         title=_page_title(response.text) or url,
         text=extracted,
         origin="url",
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
     )
 
 

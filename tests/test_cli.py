@@ -4,8 +4,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from doceval import cli, config, evaluate, sources
-from doceval import profile as profile_mod
+from doceval import cli, config, evaluate
 
 PROSE = " ".join(["word"] * 200)
 

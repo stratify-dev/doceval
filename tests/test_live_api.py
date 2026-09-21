@@ -7,7 +7,8 @@ import os
 
 import pytest
 
-from doceval import evaluate, profile as profile_mod, sources
+from doceval import evaluate, sources
+from doceval import profile as profile_mod
 
 # Two independent gates, deliberately separate:
 #   skipif  decides WHETHER this test runs at all
