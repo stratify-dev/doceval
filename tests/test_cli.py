@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -284,16 +283,31 @@ def test_bad_source_does_not_prevent_good_document_reporting(runner, post, stub_
     Checking only "not found" appears (as test_eval_continues_past_one_bad_source
     does) would still pass if the good document's own SCORES never rendered --
     e.g. if it silently dropped out of the run instead of reporting alongside
-    the error. Asserting the good document's filename sits right next to its
-    verdict band pins that its actual result, not just some report boilerplate,
-    survived. (The full tmp_path is not asserted verbatim: report.py wraps a
-    long path across lines at its fixed 80-column width, so only the short
-    filename suffix is guaranteed to stay intact on one line.)
+    the error.
+
+    The scores are asserted through --format json rather than through the table.
+    The table renders at a fixed 80 columns, so where a long tmp_path folds
+    depends on how long that path happens to be, which differs between a macOS
+    developer machine and a Linux CI runner. An assertion on rendered layout is
+    an assertion on the path length of whoever runs it; JSON carries the same
+    property with no layout in the way.
     """
-    result = runner.invoke(cli.main, ["eval", post, "missing.md", "--no-cache"])
-    assert "missing.md" in result.output
-    assert "not found" in result.output
-    assert f"{Path(post).name} 1.00  GOOD" in result.output
+    table = runner.invoke(cli.main, ["eval", post, "missing.md", "--no-cache"])
+    assert "missing.md" in table.output
+    assert "not found" in table.output
+
+    payload = json.loads(
+        runner.invoke(
+            cli.main, ["eval", post, "missing.md", "--no-cache", "--format", "json"]
+        ).stdout
+    )
+    scored = {d["id"]: d for d in payload["documents"]}
+    good = scored[post]
+    assert good["error"] is None
+    assert good["composite"] == 1.0
+    assert good["verdict"] == "GOOD"
+    assert good["groups"], "the good document must carry its real dimension results"
+    assert scored["missing.md"]["error"] is not None
 
 
 def test_eval_rejects_api_key_flag(runner, post):
