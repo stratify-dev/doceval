@@ -1,0 +1,153 @@
+name: house-style
+audience: >
+  Working developers who skim before they read. Impatient, allergic to
+  filler, looking for something to apply today.
+
+gate:
+  is_finished_prose:
+    type: noul
+    instructions: >
+      The document is finished prose written for a reader, rather than an
+      outline, a stub, a changelog, or configuration notes.
+    criteria:
+      "true": Complete sentences and paragraphs meant to be read start to finish
+      "false": Fragments, bare bullet lists, boilerplate, or placeholder text
+
+dimensions:
+  active_voice:
+    group: house_style
+    weight: 0.10
+    type: score
+    instructions: How consistently does the document use active voice?
+    levels:
+      - Passive constructions dominate; actors are missing from most sentences
+      - Passive voice appears throughout, including in the main claims
+      - A mix; active in places, passive whenever the subject is awkward
+      - Nearly all active, with isolated passive sentences
+      - Active voice throughout; every sentence names who does what
+
+  sentence_impact:
+    group: house_style
+    weight: 0.10
+    type: score
+    instructions: >
+      How short and direct are the sentences? Long sentences carrying several
+      clauses score low. Short sentences landing one idea score high.
+    levels:
+      - Long compound sentences with stacked clauses; hard to follow once
+      - Mostly long sentences; the reader re-reads to find the point
+      - Mixed lengths with no pattern; some sentences run past their point
+      - Mostly short and direct, with a few overlong sentences
+      - Short sentences, one idea each, varied only for rhythm
+
+  vague_referents:
+    group: house_style
+    weight: 0.08
+    type: score
+    instructions: >
+      Do pronouns and demonstratives point at something definite? Flag
+      sentences opening with a pronoun whose referent is unclear.
+    levels:
+      - Referents are unclear throughout; the reader guesses constantly
+      - Several sentences open with a pronoun pointing at nothing definite
+      - Occasional vague reference, recoverable from context
+      - Referents are clear except in one or two places
+      - Every pronoun points at a named thing in the previous clause
+
+  adjective_restraint:
+    group: house_style
+    weight: 0.07
+    type: score
+    instructions: >
+      Do adjectives and adverbs carry information, or pad the sentence?
+      Intensifiers adding no meaning score low.
+    levels:
+      - Stacked intensifiers and decorative adjectives in most sentences
+      - Frequent padding words; removing them would change nothing
+      - Some unnecessary modifiers, mostly in transitions and openings
+      - Modifiers nearly always carry information
+      - Every adjective and adverb changes the meaning of its sentence
+
+  cliche_free:
+    group: house_style
+    weight: 0.05
+    type: score
+    instructions: >
+      Does the writing avoid metaphors, stock phrases, and borrowed imagery in
+      favor of plain description?
+    levels:
+      - Built on extended metaphor and stock phrases throughout
+      - Several cliches and figurative flourishes carrying the main points
+      - Occasional stock phrasing, mostly in openings and closings
+      - Plain description with one or two borrowed phrases
+      - Plain description start to finish; no metaphor, no stock phrasing
+
+  opening_strength:
+    group: editorial
+    weight: 0.10
+    type: score
+    instructions: >
+      Does the opening give a skimming reader a reason to continue, or warm up
+      before saying anything?
+    levels:
+      - Several sentences of throat-clearing before the subject appears
+      - Opens with background the reader does not need yet
+      - States the subject, without a reason to keep reading
+      - States the subject and the stake in the first two sentences
+      - First sentence lands the point; the reader knows immediately what they get
+
+  structure_flow:
+    group: editorial
+    weight: 0.15
+    type: score
+    instructions: >
+      Does the document move in a deliberate order, with each section following
+      from the one before?
+    levels:
+      - Sections appear in arbitrary order; ideas repeat and double back
+      - Loose grouping; the reader reorders mentally to follow
+      - Reasonable order with one or two jumps or orphaned sections
+      - Clear progression; transitions carry the reader between sections
+      - Each section earns its position; removing one would break the argument
+
+  concision:
+    group: editorial
+    weight: 0.10
+    type: score
+    instructions: >
+      How much of the document survives editing? Repetition, restatement, and
+      filler paragraphs score low.
+    levels:
+      - Half the text restates points already made
+      - Frequent repetition and paragraphs adding nothing new
+      - Some redundancy, mainly in summaries and section openings
+      - Tight, with isolated sentences worth cutting
+      - Nothing removable without losing meaning
+
+  technical_level:
+    group: audience_fit
+    weight: 0.13
+    type: score
+    instructions: >
+      Does the assumed knowledge match `audience`? Both over-explaining and
+      under-explaining score low.
+    levels:
+      - Badly mismatched; either explains the obvious or assumes unstated expertise
+      - Frequently off target, forcing the reader to skip or look things up
+      - Roughly right, with sections pitched too high or too low
+      - Well matched, with isolated lapses
+      - Pitched exactly at `audience` throughout
+
+  takeaway_clarity:
+    group: audience_fit
+    weight: 0.12
+    type: score
+    instructions: >
+      After one read, would a reader matching `audience` know what to do
+      differently?
+    levels:
+      - No takeaway; the reader finishes with nothing to apply
+      - An implied takeaway the reader must reconstruct
+      - A takeaway stated once, buried in the middle
+      - A clear takeaway, stated and supported
+      - The takeaway is unmistakable and the reader knows the first step

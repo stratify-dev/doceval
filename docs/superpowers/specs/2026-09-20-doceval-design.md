@@ -35,8 +35,8 @@ referent pointing at nothing definite, which is a judgment. It becomes the
 doceval/
   pyproject.toml
   README.md
-  profiles/house-style.yaml
   src/doceval/
+    profiles/house-style.yaml   # shipped as package data
     sources.py    # path or URL -> Document
     profile.py    # YAML -> validated Profile
     lint.py       # text -> Violation[]
@@ -447,13 +447,14 @@ doceval profiles                      # list bundled profiles
 `eval` flags: `--profile`, `--format table|json|markdown`, `--min-confidence`
 (default 0.6), `--fail-under` (no default), `--fail-on-lint` (off by default),
 `--concurrency` (default 8), `--no-cache`, `--timeout` (default 20),
-`--min-words` (default 150), `--dump-text DIR`, `--compact`, `--no-color`.
+`--min-words` (default 100), `--dump-text DIR`, `--compact`, `--no-color`.
 
 Exit codes: `0` success, `1` a threshold was breached, `2` operational error.
 
 Thresholds are opt-in. Without `--fail-under` or `--fail-on-lint`, a run reports and
 exits `0` whatever the scores, which is what you want interactively. Passing
-`--fail-under 0.7` exits `1` when any document scores below it. Passing
+`--fail-under 0.7` exits `1` when any document scores below it, or couldn't
+be scored at all. Passing
 `--fail-on-lint` exits `1` on any lint error, ignoring warnings. Together they make
 the tool a CI gate on a content repo.
 
@@ -466,7 +467,7 @@ the tool a CI gate on a content repo.
 | 422 | Print the offending question id and field. A profile bug, not a runtime one |
 | Document over the 32k state budget | Reject with the measured size and the limit |
 | URL fetch failure | Mark one document errored, continue the run |
-| Extraction under `--min-words` | Reject before spending tokens |
+| Extraction under `--min-words` (default 100) | Reject before spending tokens |
 | Gate returns false | Skip scoring, report `not prose`, spend nothing further |
 
 Profile validation runs before the first request, so a bad weight fails immediately
