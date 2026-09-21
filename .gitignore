@@ -9,3 +9,6 @@ build/
 *.egg-info/
 .doceval-cache/
 .env
+
+# Design spec and implementation plan; kept locally, not shipped
+docs/superpowers/
