@@ -9,12 +9,25 @@ from doceval import cli, config, evaluate
 PROSE = " ".join(["word"] * 200)
 
 ANSWERS = {
-    dim: {"type": "score", "score": 4.0, "confidence": 0.95,
-          "legend": {str(i): c for i, c in enumerate("abcde")},
-          "probabilities": {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0, "4": 1.0}}
-    for dim in ("active_voice", "sentence_impact", "vague_referents",
-                "adjective_restraint", "cliche_free", "opening_strength",
-                "structure_flow", "concision", "technical_level", "takeaway_clarity")
+    dim: {
+        "type": "score",
+        "score": 4.0,
+        "confidence": 0.95,
+        "legend": {str(i): c for i, c in enumerate("abcde")},
+        "probabilities": {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0, "4": 1.0},
+    }
+    for dim in (
+        "active_voice",
+        "sentence_impact",
+        "vague_referents",
+        "adjective_restraint",
+        "cliche_free",
+        "opening_strength",
+        "structure_flow",
+        "concision",
+        "technical_level",
+        "takeaway_clarity",
+    )
 }
 ANSWERS["is_finished_prose"] = {"type": "noul", "noul": 1.0}
 
@@ -46,8 +59,12 @@ def post(tmp_path):
 def stub_api(monkeypatch):
     async def fake(documents, prof, **kwargs):
         return [
-            evaluate.Outcome(document=d, answers=ANSWERS, model="jev-1.13.0",
-                             usage={"input_tokens": 100, "output_tokens": 10})
+            evaluate.Outcome(
+                document=d,
+                answers=ANSWERS,
+                model="jev-1.13.0",
+                usage={"input_tokens": 100, "output_tokens": 10},
+            )
             for d in documents
         ]
 
@@ -117,8 +134,9 @@ def test_eval_exits_zero_without_a_threshold(runner, post, stub_api, monkeypatch
         for key in answers:
             if key != "is_finished_prose":
                 answers[key] = {**answers[key], "score": 0.0}
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", weak)
     result = runner.invoke(cli.main, ["eval", post, "--no-cache"])
@@ -127,10 +145,12 @@ def test_eval_exits_zero_without_a_threshold(runner, post, stub_api, monkeypatch
 
 def test_eval_fails_under_threshold(runner, post, stub_api, monkeypatch):
     async def weak(documents, prof, **kwargs):
-        answers = {k: ({**v, "score": 0.0} if k != "is_finished_prose" else v)
-                   for k, v in ANSWERS.items()}
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        answers = {
+            k: ({**v, "score": 0.0} if k != "is_finished_prose" else v) for k, v in ANSWERS.items()
+        }
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", weak)
     result = runner.invoke(cli.main, ["eval", post, "--fail-under", "0.7", "--no-cache"])
@@ -157,8 +177,10 @@ def test_dump_text_writes_extracted_prose(runner, post, stub_api, tmp_path):
 
 def test_bad_profile_exits_two(runner, post, stub_api, tmp_path):
     bad = tmp_path / "bad.yaml"
-    bad.write_text("name: b\naudience: x\ndimensions:\n  a:\n    group: nope\n"
-                   "    weight: 1.0\n    type: score\n    instructions: q\n    levels: [a, b]\n")
+    bad.write_text(
+        "name: b\naudience: x\ndimensions:\n  a:\n    group: nope\n"
+        "    weight: 1.0\n    type: score\n    instructions: q\n    levels: [a, b]\n"
+    )
     result = runner.invoke(cli.main, ["eval", post, "--profile", str(bad)])
     assert result.exit_code == 2
     assert "nope" in result.output
@@ -208,9 +230,7 @@ def test_json_format_stdout_is_only_json(runner, post, stub_api):
        stdout even with broken stream routing. Adding a source that fails
        to load gives the test something real to fail to keep off stdout.
     """
-    result = runner.invoke(
-        cli.main, ["eval", post, "missing.md", "--format", "json", "--no-cache"]
-    )
+    result = runner.invoke(cli.main, ["eval", post, "missing.md", "--format", "json", "--no-cache"])
     payload = json.loads(result.stdout)
     assert payload["documents"][0]["id"] == post
     assert "missing.md" in result.stderr
@@ -221,8 +241,9 @@ def test_json_format_stdout_is_only_json(runner, post, stub_api):
     "args,expected_exit",
     [
         pytest.param(["eval", "{post}", "--no-cache"], 0, id="clean-run"),
-        pytest.param(["eval", "{post}", "--fail-under", "0.7", "--no-cache"], 1,
-                     id="threshold-breach"),
+        pytest.param(
+            ["eval", "{post}", "--fail-under", "0.7", "--no-cache"], 1, id="threshold-breach"
+        ),
     ],
 )
 def test_eval_exit_code_is_exact(runner, post, stub_api, monkeypatch, args, expected_exit):
@@ -234,11 +255,15 @@ def test_eval_exit_code_is_exact(runner, post, stub_api, monkeypatch, args, expe
     integer catches that class of bug.
     """
     if expected_exit == 1:
+
         async def weak(documents, prof, **kwargs):
-            answers = {k: ({**v, "score": 0.0} if k != "is_finished_prose" else v)
-                       for k, v in ANSWERS.items()}
-            return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                    for d in documents]
+            answers = {
+                k: ({**v, "score": 0.0} if k != "is_finished_prose" else v)
+                for k, v in ANSWERS.items()
+            }
+            return [
+                evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+            ]
 
         monkeypatch.setattr(cli.evaluate, "evaluate_documents", weak)
 
@@ -294,8 +319,9 @@ def test_eval_rejects_api_key_flag(runner, post):
 def test_fail_under_treats_a_gate_failure_as_a_breach(runner, post, monkeypatch):
     async def not_prose(documents, prof, **kwargs):
         answers = {**ANSWERS, "is_finished_prose": {"type": "noul", "noul": 0.0}}
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", not_prose)
@@ -313,8 +339,9 @@ def test_fail_under_treats_unscored_as_a_breach(runner, post, monkeypatch):
             k: ({**v, "confidence": 0.0} if k != "is_finished_prose" else v)
             for k, v in ANSWERS.items()
         }
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", unscored)
@@ -346,8 +373,9 @@ def test_unscored_exits_zero_without_a_threshold(runner, post, stub_api, monkeyp
             k: ({**v, "confidence": 0.0} if k != "is_finished_prose" else v)
             for k, v in ANSWERS.items()
         }
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", unscored)
     result = runner.invoke(cli.main, ["eval", post, "--no-cache"])
@@ -358,8 +386,9 @@ def test_unscored_exits_zero_without_a_threshold(runner, post, stub_api, monkeyp
 def test_gate_failure_exits_zero_without_a_threshold(runner, post, stub_api, monkeypatch):
     async def not_prose(documents, prof, **kwargs):
         answers = {**ANSWERS, "is_finished_prose": {"type": "noul", "noul": 0.0}}
-        return [evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0")
-                for d in documents]
+        return [
+            evaluate.Outcome(document=d, answers=answers, model="jev-1.13.0") for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", not_prose)
     result = runner.invoke(cli.main, ["eval", post, "--no-cache"])
@@ -374,9 +403,7 @@ def test_gate_failure_exits_zero_without_a_threshold(runner, post, stub_api, mon
 # one command and silently swallowed in the other.
 
 
-def test_lint_exits_two_on_an_unreadable_source_even_with_a_good_one(
-    runner, post, monkeypatch
-):
+def test_lint_exits_two_on_an_unreadable_source_even_with_a_good_one(runner, post, monkeypatch):
     # No filename check here: Rich folds a long tmp_path at its fixed
     # 80-column width, and where the fold lands shifts with pytest's tmpdir
     # slug (which changes with e.g. the test's own name). The exit code and
@@ -417,11 +444,15 @@ def test_a_null_bearing_answer_does_not_crash_the_whole_run(runner, tmp_path, mo
         for d in documents:
             answers = ANSWERS
             if d.id == str(bad_path):
-                answers = {**ANSWERS,
-                           "active_voice": {**ANSWERS["active_voice"], "score": None}}
-            outcomes.append(evaluate.Outcome(
-                document=d, answers=answers, model="jev-1.13.0",
-                usage={"input_tokens": 100, "output_tokens": 10}))
+                answers = {**ANSWERS, "active_voice": {**ANSWERS["active_voice"], "score": None}}
+            outcomes.append(
+                evaluate.Outcome(
+                    document=d,
+                    answers=answers,
+                    model="jev-1.13.0",
+                    usage={"input_tokens": 100, "output_tokens": 10},
+                )
+            )
         return outcomes
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
@@ -449,9 +480,15 @@ def test_a_scoring_exception_for_one_document_does_not_kill_the_run(
     other_path.write_text(f"# Other\n\n{PROSE}\n")
 
     async def fake(documents, prof, **kwargs):
-        return [evaluate.Outcome(document=d, answers=ANSWERS, model="jev-1.13.0",
-                                  usage={"input_tokens": 100, "output_tokens": 10})
-                for d in documents]
+        return [
+            evaluate.Outcome(
+                document=d,
+                answers=ANSWERS,
+                model="jev-1.13.0",
+                usage={"input_tokens": 100, "output_tokens": 10},
+            )
+            for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
     monkeypatch.setenv(config.API_KEY_ENV, "sk-test")
@@ -492,9 +529,15 @@ def test_api_timeout_flag_reaches_evaluate_documents(runner, post, monkeypatch):
 
     async def fake(documents, prof, **kwargs):
         captured.update(kwargs)
-        return [evaluate.Outcome(document=d, answers=ANSWERS, model="jev-1.13.0",
-                                  usage={"input_tokens": 100, "output_tokens": 10})
-                for d in documents]
+        return [
+            evaluate.Outcome(
+                document=d,
+                answers=ANSWERS,
+                model="jev-1.13.0",
+                usage={"input_tokens": 100, "output_tokens": 10},
+            )
+            for d in documents
+        ]
 
     monkeypatch.setattr(cli.evaluate, "evaluate_documents", fake)
     monkeypatch.setenv(config.API_KEY_ENV, "sk-test")

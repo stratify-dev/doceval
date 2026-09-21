@@ -71,11 +71,7 @@ def strip_frontmatter(text: str) -> str:
 # (one low-confidence score the report already flags for review).
 def load_document(arg: str, *, timeout: float = 20.0, min_words: int = 100) -> Document:
     """Resolve one argument into a Document, or raise SourceError."""
-    document = (
-        _fetch_url(arg, timeout=timeout)
-        if is_url(arg)
-        else _read_file(arg)
-    )
+    document = _fetch_url(arg, timeout=timeout) if is_url(arg) else _read_file(arg)
     _guard(document, min_words=min_words)
     return document
 

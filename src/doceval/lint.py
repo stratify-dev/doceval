@@ -152,19 +152,30 @@ def lint(text: str) -> list[Violation]:
         violations.append(Violation(rule, severity, line, column, matched, suggestion))
 
     for match in _EM_DASH.finditer(masked):
-        add("em_dash", SEVERITY_ERROR, match.start(), match.group(),
-            "comma, period, or parentheses")
+        add(
+            "em_dash", SEVERITY_ERROR, match.start(), match.group(), "comma, period, or parentheses"
+        )
 
     entity_semicolons = {match.end() - 1 for match in _HTML_ENTITY.finditer(masked)}
     for match in _SEMICOLON.finditer(masked):
         if match.start() in entity_semicolons:
             continue  # closes an HTML entity (&nbsp;), not prose punctuation
-        add("semicolon", SEVERITY_ERROR, match.start(), match.group(),
-            "period, or split the sentence")
+        add(
+            "semicolon",
+            SEVERITY_ERROR,
+            match.start(),
+            match.group(),
+            "period, or split the sentence",
+        )
 
     for match in _ASTERISK.finditer(masked):
-        add("asterisk", SEVERITY_ERROR, match.start(), match.group(),
-            "'-' for bullets, rewrite for emphasis")
+        add(
+            "asterisk",
+            SEVERITY_ERROR,
+            match.start(),
+            match.group(),
+            "'-' for bullets, rewrite for emphasis",
+        )
 
     for match in _HASHTAG.finditer(masked):
         if _at_line_start(masked, line_starts, match.start()):
@@ -176,8 +187,7 @@ def lint(text: str) -> list[Violation]:
             add("setup_language", SEVERITY_ERROR, match.start(), match.group(), suggestion)
 
     for match in _NOT_JUST.finditer(masked):
-        add("not_just", SEVERITY_ERROR, match.start(), match.group(),
-            "state the point directly")
+        add("not_just", SEVERITY_ERROR, match.start(), match.group(), "state the point directly")
 
     for phrase, suggestion in BANNED_WORDS.items():
         for match in _phrase_pattern(phrase).finditer(masked):

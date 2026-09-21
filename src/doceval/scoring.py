@@ -101,25 +101,43 @@ def score_document(
 
     if not gate_passed:
         return DocumentResult(
-            document=document, composite=None, verdict=VERDICT_NOT_PROSE,
-            groups=groups, violations=tuple(violations), gate_passed=False,
-            model=model, cached=cached,
+            document=document,
+            composite=None,
+            verdict=VERDICT_NOT_PROSE,
+            groups=groups,
+            violations=tuple(violations),
+            gate_passed=False,
+            model=model,
+            cached=cached,
         )
 
     composite = _weighted_mean(dimensions)
     verdict = VERDICT_UNSCORED if composite is None else verdict_for(composite)
 
     return DocumentResult(
-        document=document, composite=composite, verdict=verdict, groups=groups,
-        violations=tuple(violations), gate_passed=True, model=model, cached=cached,
+        document=document,
+        composite=composite,
+        verdict=verdict,
+        groups=groups,
+        violations=tuple(violations),
+        gate_passed=True,
+        model=model,
+        cached=cached,
     )
 
 
 def error_result(document: Document, message: str) -> DocumentResult:
     """A document that never reached scoring. One failure never ends a run."""
     return DocumentResult(
-        document=document, composite=None, verdict=VERDICT_ERROR, groups=(),
-        violations=(), gate_passed=False, model="", cached=False, error=message,
+        document=document,
+        composite=None,
+        verdict=VERDICT_ERROR,
+        groups=(),
+        violations=(),
+        gate_passed=False,
+        model="",
+        cached=False,
+        error=message,
     )
 
 
@@ -133,9 +151,7 @@ def corpus_group_averages(results: list[DocumentResult]) -> dict[str, float]:
     return {name: sum(values) / len(values) for name, values in totals.items()}
 
 
-def weakest_dimensions(
-    results: list[DocumentResult], limit: int = 2
-) -> list[tuple[str, float]]:
+def weakest_dimensions(results: list[DocumentResult], limit: int = 2) -> list[tuple[str, float]]:
     """Dimension labels with the lowest mean across the corpus."""
     totals: dict[str, list[float]] = {}
     for result in results:
@@ -188,9 +204,15 @@ def _unscored_dimension(dimension: Dimension) -> DimensionResult:
     and the composite, an unreadable score is the same claim as no score.
     """
     return DimensionResult(
-        id=dimension.id, label=dimension.label, group=dimension.group,
-        weight=dimension.weight, raw=0.0, normalized=0.0, probabilities={},
-        confidence=0.0, needs_review=True,
+        id=dimension.id,
+        label=dimension.label,
+        group=dimension.group,
+        weight=dimension.weight,
+        raw=0.0,
+        normalized=0.0,
+        probabilities={},
+        confidence=0.0,
+        needs_review=True,
     )
 
 
@@ -227,7 +249,9 @@ def _dimension_result(
     )
 
 
-def _group_results(prof: Profile, dimensions: tuple[DimensionResult, ...]) -> tuple[GroupResult, ...]:
+def _group_results(
+    prof: Profile, dimensions: tuple[DimensionResult, ...]
+) -> tuple[GroupResult, ...]:
     by_id = {d.id: d for d in dimensions}
     groups = []
     for name, members in prof.by_group().items():

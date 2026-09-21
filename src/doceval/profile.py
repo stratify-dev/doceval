@@ -106,9 +106,7 @@ def load_profile(name_or_path: str | Path) -> Profile:
 
     if not path.is_file():
         available = ", ".join(bundled_profiles()) or "none"
-        raise ProfileError(
-            f"profile {name_or_path!r} not found. Bundled profiles: {available}"
-        )
+        raise ProfileError(f"profile {name_or_path!r} not found. Bundled profiles: {available}")
 
     try:
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=_StrictLoader)
@@ -134,8 +132,7 @@ def parse_profile(data: dict, source: str) -> Profile:
         raise ProfileError(f"{source}: needs at least one dimension")
 
     dimensions = tuple(
-        _parse_dimension(dim_id, body, source)
-        for dim_id, body in raw_dimensions.items()
+        _parse_dimension(dim_id, body, source) for dim_id, body in raw_dimensions.items()
     )
 
     total = sum(d.weight for d in dimensions)
@@ -164,9 +161,7 @@ def _parse_dimension(dim_id: str, body: object, source: str) -> Dimension:
 
     group = body.get("group")
     if group not in GROUPS:
-        raise ProfileError(
-            f"{where}: unknown group {group!r}. Valid groups: {', '.join(GROUPS)}"
-        )
+        raise ProfileError(f"{where}: unknown group {group!r}. Valid groups: {', '.join(GROUPS)}")
 
     instructions = body.get("instructions")
     if not instructions or not str(instructions).strip():
@@ -219,7 +214,7 @@ def _parse_gate(raw: object, source: str) -> Gate | None:
     for key in criteria:
         if not isinstance(key, str):
             raise ProfileError(
-                f'{where}: criteria key {key!r} must be quoted in YAML, '
+                f"{where}: criteria key {key!r} must be quoted in YAML, "
                 f'write "true" and "false" as strings, not bare booleans'
             )
         if key not in GATE_CRITERIA_KEYS:

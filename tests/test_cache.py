@@ -6,8 +6,11 @@ import pytest
 
 from doceval import cache
 
-PAYLOAD = {"model": "jev-1.13.0", "answers": {"a": {"type": "noul", "noul": 1.0}},
-           "usage": {"input_tokens": 100, "output_tokens": 10}}
+PAYLOAD = {
+    "model": "jev-1.13.0",
+    "answers": {"a": {"type": "noul", "noul": 1.0}},
+    "usage": {"input_tokens": 100, "output_tokens": 10},
+}
 
 
 def test_key_is_stable():

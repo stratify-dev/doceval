@@ -8,6 +8,14 @@ request per document. Your code owns the weights.
 
 ## Install
 
+Homebrew:
+
+```bash
+brew install stratify-dev/tap/doceval
+```
+
+From source:
+
 ```bash
 uv sync
 ```

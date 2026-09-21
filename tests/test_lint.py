@@ -75,8 +75,7 @@ def test_flags_setup_language():
 
 def test_flags_not_just_construction():
     # "just" is also a common-word warning, so filter rather than unpack.
-    found = [v for v in lint.lint("Not just faster, but also cheaper.")
-             if v.rule == "not_just"]
+    found = [v for v in lint.lint("Not just faster, but also cheaper.") if v.rule == "not_just"]
     assert len(found) == 1
     assert found[0].severity == "error"
 
@@ -127,12 +126,15 @@ def test_clean_prose_produces_nothing():
     assert lint.lint("Short sentences work. You read them once.\n") == []
 
 
-@pytest.mark.parametrize("word,suggestion", [
-    ("delve", "dig, go into"),
-    ("leverage", None),
-    ("pivotal", "key, central"),
-    ("tapestry", "delete"),
-])
+@pytest.mark.parametrize(
+    "word,suggestion",
+    [
+        ("delve", "dig, go into"),
+        ("leverage", None),
+        ("pivotal", "key, central"),
+        ("tapestry", "delete"),
+    ],
+)
 def test_banned_word_table(word, suggestion):
     if suggestion is None:
         assert word not in lint.BANNED_WORDS
@@ -141,8 +143,11 @@ def test_banned_word_table(word, suggestion):
 
 
 def test_flags_previously_missing_banned_words():
-    found = [v for v in lint.lint("Imagine the tapestry. Discover more. You are not alone.")
-             if v.rule == "banned_word"]
+    found = [
+        v
+        for v in lint.lint("Imagine the tapestry. Discover more. You are not alone.")
+        if v.rule == "banned_word"
+    ]
     assert len(found) == 4
 
 
@@ -209,6 +214,7 @@ def test_ignores_semicolon_closing_a_named_html_entity_other_than_nbsp():
 
 
 def test_still_flags_a_real_semicolon_near_an_entity():
-    found = [v for v in lint.lint("It runs fast&nbsp;now; the cost is low.")
-             if v.rule == "semicolon"]
+    found = [
+        v for v in lint.lint("It runs fast&nbsp;now; the cost is low.") if v.rule == "semicolon"
+    ]
     assert len(found) == 1

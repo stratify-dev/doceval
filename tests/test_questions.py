@@ -7,7 +7,9 @@ PROF = profile_mod.Profile(
     name="t",
     audience="Working developers.",
     dimensions=(
-        profile_mod.Dimension("active_voice", "house_style", 0.5, "How active?", ("bad", "ok", "good")),
+        profile_mod.Dimension(
+            "active_voice", "house_style", 0.5, "How active?", ("bad", "ok", "good")
+        ),
         profile_mod.Dimension("concision", "editorial", 0.5, "How tight?", ("loose", "tight")),
     ),
     gate=profile_mod.Gate("is_prose", "Finished prose?", {"true": "yes", "false": "no"}),
@@ -53,9 +55,14 @@ def test_fingerprint_is_stable_across_calls():
 
 def test_fingerprint_changes_when_instructions_change():
     edited = profile_mod.Profile(
-        "t", PROF.audience,
-        (profile_mod.Dimension("active_voice", "house_style", 0.5, "DIFFERENT", ("bad", "ok", "good")),
-         PROF.dimensions[1]),
+        "t",
+        PROF.audience,
+        (
+            profile_mod.Dimension(
+                "active_voice", "house_style", 0.5, "DIFFERENT", ("bad", "ok", "good")
+            ),
+            PROF.dimensions[1],
+        ),
         PROF.gate,
     )
     assert questions.questions_fingerprint(edited) != questions.questions_fingerprint(PROF)
@@ -63,9 +70,14 @@ def test_fingerprint_changes_when_instructions_change():
 
 def test_fingerprint_ignores_weight_changes():
     reweighted = profile_mod.Profile(
-        "t", PROF.audience,
-        (profile_mod.Dimension("active_voice", "house_style", 0.9, "How active?", ("bad", "ok", "good")),
-         profile_mod.Dimension("concision", "editorial", 0.1, "How tight?", ("loose", "tight"))),
+        "t",
+        PROF.audience,
+        (
+            profile_mod.Dimension(
+                "active_voice", "house_style", 0.9, "How active?", ("bad", "ok", "good")
+            ),
+            profile_mod.Dimension("concision", "editorial", 0.1, "How tight?", ("loose", "tight")),
+        ),
         PROF.gate,
     )
     assert questions.questions_fingerprint(reweighted) == questions.questions_fingerprint(PROF)
@@ -77,9 +89,7 @@ def test_fingerprint_changes_when_audience_changes():
 
 
 def test_fingerprint_changes_when_a_level_text_changes():
-    edited_dimension = dataclasses.replace(
-        PROF.dimensions[0], levels=("DIFFERENT", "ok", "good")
-    )
+    edited_dimension = dataclasses.replace(PROF.dimensions[0], levels=("DIFFERENT", "ok", "good"))
     edited = dataclasses.replace(PROF, dimensions=(edited_dimension, PROF.dimensions[1]))
     assert questions.questions_fingerprint(edited) != questions.questions_fingerprint(PROF)
 

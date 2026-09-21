@@ -28,8 +28,13 @@ def score_answer(raw, confidence, probabilities=None):
 
 def build(answers, *, min_confidence=0.6, violations=()):
     return scoring.score_document(
-        document=DOC, prof=PROF, answers=answers, violations=violations,
-        min_confidence=min_confidence, model="jev-1.13.0", cached=False,
+        document=DOC,
+        prof=PROF,
+        answers=answers,
+        violations=violations,
+        min_confidence=min_confidence,
+        model="jev-1.13.0",
+        cached=False,
     )
 
 
@@ -46,29 +51,40 @@ def test_normalize_handles_fractional_scores():
 
 
 def test_composite_is_the_weighted_mean():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(2.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(2.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert result.composite == pytest.approx(0.75)
     assert result.verdict == "FAIR"
 
 
-@pytest.mark.parametrize("composite,expected", [
-    (0.95, "GOOD"), (0.80, "GOOD"), (0.79, "FAIR"),
-    (0.60, "FAIR"), (0.59, "WEAK"), (0.0, "WEAK"),
-])
+@pytest.mark.parametrize(
+    "composite,expected",
+    [
+        (0.95, "GOOD"),
+        (0.80, "GOOD"),
+        (0.79, "FAIR"),
+        (0.60, "FAIR"),
+        (0.59, "WEAK"),
+        (0.0, "WEAK"),
+    ],
+)
 def test_verdict_bands(composite, expected):
     assert scoring.verdict_for(composite) == expected
 
 
 def test_low_confidence_dimension_is_flagged_and_excluded():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(0.0, 0.3),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(0.0, 0.3),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     flagged = [d for g in result.groups for d in g.dimensions if d.needs_review]
     assert [d.id for d in flagged] == ["concision"]
     # remaining weight rescales, so the composite is active_voice alone
@@ -76,72 +92,86 @@ def test_low_confidence_dimension_is_flagged_and_excluded():
 
 
 def test_all_dimensions_below_confidence_leaves_no_composite():
-    result = build({
-        "active_voice": score_answer(4.0, 0.1),
-        "concision": score_answer(2.0, 0.2),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.1),
+            "concision": score_answer(2.0, 0.2),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert result.composite is None
     assert result.verdict == "UNSCORED"
 
 
 def test_failed_gate_skips_scoring():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 0.1},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 0.1},
+        }
+    )
     assert result.gate_passed is False
     assert result.verdict == "NOT_PROSE"
     assert result.composite is None
 
 
 def test_gate_at_exactly_half_passes():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 0.5},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 0.5},
+        }
+    )
     assert result.gate_passed is True
 
 
 def test_groups_carry_their_own_rollup():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(0.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(0.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     rollups = {g.name: g.score for g in result.groups}
     assert rollups["house_style"] == pytest.approx(1.0)
     assert rollups["editorial"] == pytest.approx(0.0)
 
 
 def test_group_rollup_is_none_when_every_member_is_flagged():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(0.0, 0.1),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(0.0, 0.1),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     rollups = {g.name: g.score for g in result.groups}
     assert rollups["editorial"] is None
 
 
 def test_probabilities_survive_onto_the_result():
     probs = {"0": 0.1, "1": 0.2, "2": 0.4, "3": 0.2, "4": 0.1}
-    result = build({
-        "active_voice": score_answer(2.0, 0.9, probs),
-        "concision": score_answer(2.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(2.0, 0.9, probs),
+            "concision": score_answer(2.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     dimension = result.groups[0].dimensions[0]
     assert dimension.probabilities == probs
 
 
 def test_missing_answer_is_treated_as_needing_review():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     concision = [d for g in result.groups for d in g.dimensions if d.id == "concision"][0]
     assert concision.needs_review is True
     assert concision.confidence == 0.0
@@ -152,11 +182,14 @@ def test_violations_split_into_errors_and_warnings():
         lint.Violation("em_dash", "error", 1, 1, "—", "comma"),
         lint.Violation("common_word", "warning", 2, 1, "that", "remove"),
     )
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    }, violations=violations)
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        },
+        violations=violations,
+    )
     assert len(result.errors) == 1
     assert len(result.warnings) == 1
 
@@ -180,17 +213,32 @@ def test_error_result_carries_the_message():
 
 
 def test_corpus_group_averages():
-    a = build({"active_voice": score_answer(4.0, 0.9), "concision": score_answer(4.0, 0.9),
-               "is_prose": {"type": "noul", "noul": 1.0}})
-    b = build({"active_voice": score_answer(0.0, 0.9), "concision": score_answer(0.0, 0.9),
-               "is_prose": {"type": "noul", "noul": 1.0}})
+    a = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
+    b = build(
+        {
+            "active_voice": score_answer(0.0, 0.9),
+            "concision": score_answer(0.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     averages = scoring.corpus_group_averages([a, b])
     assert averages["house_style"] == pytest.approx(0.5)
 
 
 def test_weakest_dimensions_ranks_ascending():
-    a = build({"active_voice": score_answer(4.0, 0.9), "concision": score_answer(1.0, 0.9),
-               "is_prose": {"type": "noul", "noul": 1.0}})
+    a = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(1.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     weakest = scoring.weakest_dimensions([a], limit=1)
     assert weakest[0][0] == "concision"
 
@@ -211,11 +259,13 @@ def test_property_rescaling_is_exact():
     What remains is active_voice's own weight over itself, which cancels:
     the composite is 0.75 exactly, not 0.75 scaled by 0.5 weight-share.
     """
-    result = build({
-        "active_voice": score_answer(3.0, 0.9),
-        "concision": score_answer(4.0, 0.2),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(3.0, 0.9),
+            "concision": score_answer(4.0, 0.2),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert result.composite == pytest.approx(0.75)
 
 
@@ -225,16 +275,20 @@ def test_property_exclusion_never_drags_composite_down():
     weak dimension gets flagged should outscore the identical document
     where that weak dimension was confident enough to count.
     """
-    excluded = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(0.0, 0.2),  # below min_confidence: excluded
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
-    included = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(0.0, 0.9),  # confident: counted
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    excluded = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(0.0, 0.2),  # below min_confidence: excluded
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
+    included = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(0.0, 0.9),  # confident: counted
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert excluded.composite == pytest.approx(1.0)
     assert included.composite == pytest.approx(0.5)
     assert excluded.composite > included.composite
@@ -269,10 +323,12 @@ def test_property_missing_answer_produces_a_row_not_a_hole():
     flagged for review, rather than being silently dropped from the
     report's row count.
     """
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     all_dimensions = [d for g in result.groups for d in g.dimensions]
     assert len(all_dimensions) == len(PROF.dimensions)
     concision = next(d for d in all_dimensions if d.id == "concision")
@@ -294,11 +350,13 @@ def test_property_missing_answer_produces_a_row_not_a_hole():
 
 
 def test_null_score_is_treated_like_a_missing_answer():
-    result = build({
-        "active_voice": {**score_answer(4.0, 0.9), "score": None},
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": {**score_answer(4.0, 0.9), "score": None},
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     dims = {d.id: d for g in result.groups for d in g.dimensions}
     assert dims["active_voice"].needs_review is True
     assert dims["active_voice"].confidence == 0.0
@@ -309,41 +367,49 @@ def test_null_score_is_treated_like_a_missing_answer():
 
 
 def test_non_numeric_score_is_treated_like_a_missing_answer():
-    result = build({
-        "active_voice": {**score_answer(4.0, 0.9), "score": "not-a-number"},
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": {**score_answer(4.0, 0.9), "score": "not-a-number"},
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     dims = {d.id: d for g in result.groups for d in g.dimensions}
     assert dims["active_voice"].needs_review is True
 
 
 def test_null_confidence_falls_back_to_zero_rather_than_raising():
-    result = build({
-        "active_voice": {**score_answer(4.0, 0.9), "confidence": None},
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": {**score_answer(4.0, 0.9), "confidence": None},
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     dims = {d.id: d for g in result.groups for d in g.dimensions}
     assert dims["active_voice"].confidence == 0.0
     assert dims["active_voice"].needs_review is True
 
 
 def test_null_gate_noul_defaults_to_passing_rather_than_raising():
-    result = build({
-        "active_voice": score_answer(4.0, 0.9),
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": None},
-    })
+    result = build(
+        {
+            "active_voice": score_answer(4.0, 0.9),
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": None},
+        }
+    )
     assert result.gate_passed is True
 
 
 def test_null_probabilities_does_not_raise():
-    result = build({
-        "active_voice": {**score_answer(4.0, 0.9), "probabilities": None},
-        "concision": score_answer(4.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    result = build(
+        {
+            "active_voice": {**score_answer(4.0, 0.9), "probabilities": None},
+            "concision": score_answer(4.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     dims = {d.id: d for g in result.groups for d in g.dimensions}
     assert dims["active_voice"].probabilities == {}
     # a null probabilities field doesn't imply an unreadable score
@@ -356,18 +422,22 @@ def test_property_unscored_is_distinct_from_a_zero_composite():
     confident the document sits at the floor. These are different claims
     and must never collapse into each other.
     """
-    unscored = build({
-        "active_voice": score_answer(4.0, 0.1),
-        "concision": score_answer(2.0, 0.2),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    unscored = build(
+        {
+            "active_voice": score_answer(4.0, 0.1),
+            "concision": score_answer(2.0, 0.2),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert unscored.composite is None
     assert unscored.verdict == "UNSCORED"
 
-    zeroed = build({
-        "active_voice": score_answer(0.0, 0.9),
-        "concision": score_answer(0.0, 0.9),
-        "is_prose": {"type": "noul", "noul": 1.0},
-    })
+    zeroed = build(
+        {
+            "active_voice": score_answer(0.0, 0.9),
+            "concision": score_answer(0.0, 0.9),
+            "is_prose": {"type": "noul", "noul": 1.0},
+        }
+    )
     assert zeroed.composite == pytest.approx(0.0)
     assert zeroed.verdict == "WEAK"

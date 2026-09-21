@@ -63,8 +63,7 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
         total_errors += len(errors)
 
         console.print(
-            f"\n [bold]{document.id}[/bold]  "
-            f"{len(errors)} errors · {len(warnings)} warnings"
+            f"\n [bold]{document.id}[/bold]  {len(errors)} errors · {len(warnings)} warnings"
         )
         for violation in violations:
             style = "red" if violation.severity == "error" else "yellow"
@@ -88,29 +87,68 @@ def lint_command(paths, min_words, timeout, fail_on_lint, no_color) -> None:
 @main.command(name="eval")
 @click.argument("paths", nargs=-1, required=True)
 @click.option("--profile", "profile_name", default="house-style", show_default=True)
-@click.option("--format", "output_format",
-              type=click.Choice(["table", "json", "markdown"]), default="table", show_default=True)
-@click.option("--min-confidence", default=0.6, show_default=True,
-              help="Dimensions below this are flagged and excluded from the composite.")
-@click.option("--fail-under", type=float, default=None,
-              help="Exit 1 if any document scores below this, or couldn't be scored.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json", "markdown"]),
+    default="table",
+    show_default=True,
+)
+@click.option(
+    "--min-confidence",
+    default=0.6,
+    show_default=True,
+    help="Dimensions below this are flagged and excluded from the composite.",
+)
+@click.option(
+    "--fail-under",
+    type=float,
+    default=None,
+    help="Exit 1 if any document scores below this, or couldn't be scored.",
+)
 @click.option("--fail-on-lint", is_flag=True, help="Exit 1 when any lint error is found.")
 @click.option("--concurrency", default=8, show_default=True)
 @click.option("--no-cache", is_flag=True, help="Ignore cached answers.")
 @click.option("--cache-dir", default=DEFAULT_CACHE_DIR, show_default=True)
 @click.option("--timeout", default=20.0, show_default=True, help="URL fetch timeout in seconds.")
-@click.option("--api-timeout", default=evaluate.API_TIMEOUT, show_default=True,
-              help="TypeSafe API request timeout in seconds, per HTTP attempt. "
-                   "Distinct from --timeout, which only bounds fetching a URL source.")
-@click.option("--min-words", default=100, show_default=True,
-              help="Reject documents extracting fewer words than this.")
-@click.option("--dump-text", type=click.Path(file_okay=False), default=None,
-              help="Write each document's extracted prose to this directory.")
+@click.option(
+    "--api-timeout",
+    default=evaluate.API_TIMEOUT,
+    show_default=True,
+    help="TypeSafe API request timeout in seconds, per HTTP attempt. "
+    "Distinct from --timeout, which only bounds fetching a URL source.",
+)
+@click.option(
+    "--min-words",
+    default=100,
+    show_default=True,
+    help="Reject documents extracting fewer words than this.",
+)
+@click.option(
+    "--dump-text",
+    type=click.Path(file_okay=False),
+    default=None,
+    help="Write each document's extracted prose to this directory.",
+)
 @click.option("--compact", is_flag=True, help="Show group rollups only.")
 @click.option("--no-color", is_flag=True, help="Plain output.")
-def eval_command(paths, profile_name, output_format, min_confidence, fail_under,
-                 fail_on_lint, concurrency, no_cache, cache_dir, timeout, api_timeout,
-                 min_words, dump_text, compact, no_color) -> None:
+def eval_command(
+    paths,
+    profile_name,
+    output_format,
+    min_confidence,
+    fail_under,
+    fail_on_lint,
+    concurrency,
+    no_cache,
+    cache_dir,
+    timeout,
+    api_timeout,
+    min_words,
+    dump_text,
+    compact,
+    no_color,
+) -> None:
     """Evaluate documents and URLs against a profile."""
     quiet = output_format != "table"
     console = Console(no_color=no_color, stderr=quiet)
@@ -136,13 +174,18 @@ def eval_command(paths, profile_name, output_format, min_confidence, fail_under,
 
     started = time.monotonic()
     with console.status("[dim]evaluating…[/dim]", spinner="dots") as status:
+
         def on_start(document):
             status.update(f"[dim]evaluating[/dim] {document.id}")
 
         outcomes = asyncio.run(
             evaluate.evaluate_documents(
-                documents, prof, concurrency=concurrency,
-                cache_dir=cache_dir, use_cache=not no_cache, api_timeout=api_timeout,
+                documents,
+                prof,
+                concurrency=concurrency,
+                cache_dir=cache_dir,
+                use_cache=not no_cache,
+                api_timeout=api_timeout,
                 on_start=on_start,
             )
         )
@@ -171,14 +214,16 @@ def _score_outcome(outcome, prof, min_confidence):
         return scoring.error_result(outcome.document, outcome.error)
     try:
         return scoring.score_document(
-            document=outcome.document, prof=prof, answers=outcome.answers or {},
+            document=outcome.document,
+            prof=prof,
+            answers=outcome.answers or {},
             violations=lint_mod.lint(outcome.document.text),
-            min_confidence=min_confidence, model=outcome.model, cached=outcome.cached,
+            min_confidence=min_confidence,
+            model=outcome.model,
+            cached=outcome.cached,
         )
     except Exception as error:
-        return scoring.error_result(
-            outcome.document, f"{type(error).__name__}: {error}"
-        )
+        return scoring.error_result(outcome.document, f"{type(error).__name__}: {error}")
 
 
 def _render(results, prof, outcomes, elapsed, output_format, compact, no_color) -> None:
@@ -214,8 +259,9 @@ def _load_all(paths, *, timeout, min_words, console):
 def _placeholder(path: str):
     from .sources import Document, is_url
 
-    return Document(id=path, title=path, text="",
-                    origin="url" if is_url(path) else "file", fetched_at=None)
+    return Document(
+        id=path, title=path, text="", origin="url" if is_url(path) else "file", fetched_at=None
+    )
 
 
 def _dump(documents, directory: Path) -> None:

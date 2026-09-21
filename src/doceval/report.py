@@ -62,8 +62,11 @@ DETAIL_TEXT_WIDTH = VIOLATION_TEXT_WIDTH + 2  # the two quote characters
 # not sufficient; the suggestion after it needs the same treatment, sized to
 # whatever the other fixed columns and the arrow leave inside 80 columns.
 SUGGESTION_WIDTH = (
-    PIPED_CONSOLE_WIDTH - DETAIL_LINE_WIDTH - DETAIL_RULE_WIDTH
-    - DETAIL_TEXT_WIDTH - len(DETAIL_ARROW)
+    PIPED_CONSOLE_WIDTH
+    - DETAIL_LINE_WIDTH
+    - DETAIL_RULE_WIDTH
+    - DETAIL_TEXT_WIDTH
+    - len(DETAIL_ARROW)
 )
 
 _WHITESPACE_RUN = re.compile(r"\s+")
@@ -95,8 +98,7 @@ def sparkline(probabilities: dict[str, float]) -> str:
 
     top = len(BLOCKS) - 1
     return "".join(
-        BLOCKS[round(max(0.0, min(1.0, probability)) * top)]
-        for _, probability in sorted(parsed)
+        BLOCKS[round(max(0.0, min(1.0, probability)) * top)] for _, probability in sorted(parsed)
     )
 
 
@@ -174,7 +176,9 @@ def _line_prefix(line: int, width: int = DETAIL_LINE_WIDTH) -> str:
     return text[: width - 1] + "…"
 
 
-def render_documents(console: Console, results: list[DocumentResult], compact: bool = False) -> None:
+def render_documents(
+    console: Console, results: list[DocumentResult], compact: bool = False
+) -> None:
     for result in results:
         _render_one(console, result, compact)
         console.print()
@@ -298,13 +302,17 @@ def render_corpus(
 
     cached = sum(1 for r in results if r.cached)
     tokens = usage.get("input_tokens", 0)
-    footer = (
-        f"\n  {model} · {tokens:,} tokens · {elapsed:.1f}s · {cached} cached"
-    )
+    footer = f"\n  {model} · {tokens:,} tokens · {elapsed:.1f}s · {cached} cached"
     body.append(footer, style="dim")
 
-    console.print(Panel(body, title=f"{len(results)} documents · {prof.name}",
-                        title_align="left", border_style="dim"))
+    console.print(
+        Panel(
+            body,
+            title=f"{len(results)} documents · {prof.name}",
+            title_align="left",
+            border_style="dim",
+        )
+    )
 
 
 def to_json(results: list[DocumentResult], prof: Profile) -> str:
@@ -315,8 +323,7 @@ def to_json(results: list[DocumentResult], prof: Profile) -> str:
         "summary": {
             "group_averages": corpus_group_averages(results),
             "weakest_dimensions": [
-                {"label": label, "score": value}
-                for label, value in weakest_dimensions(results)
+                {"label": label, "score": value} for label, value in weakest_dimensions(results)
             ],
             "cached": sum(1 for r in results if r.cached),
             "errored": sum(1 for r in results if r.error is not None),
@@ -340,8 +347,13 @@ def to_markdown(results: list[DocumentResult], prof: Profile) -> str:
     for result in results:
         if result.error is not None or not result.groups:
             continue
-        lines += ["", f"## {result.document.id}", "",
-                  "| dimension | score | confidence | review |", "| --- | --- | --- | --- |"]
+        lines += [
+            "",
+            f"## {result.document.id}",
+            "",
+            "| dimension | score | confidence | review |",
+            "| --- | --- | --- | --- |",
+        ]
         for group in result.groups:
             for dimension in group.dimensions:
                 mark = "yes" if dimension.needs_review else ""
@@ -409,9 +421,7 @@ def _marker(result: DocumentResult) -> str:
         return "✗ error"
     if not result.gate_passed:
         return "· not prose"
-    review = sum(
-        1 for g in result.groups for d in g.dimensions if d.needs_review
-    )
+    review = sum(1 for g in result.groups for d in g.dimensions if d.needs_review)
     if review:
         return f"⚠ {review} review"
     return "✓"

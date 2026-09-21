@@ -8,27 +8,37 @@ from doceval import evaluate, sources
 from doceval import profile as profile_mod
 
 PROF = profile_mod.Profile(
-    name="t", audience="Developers.",
+    name="t",
+    audience="Developers.",
     dimensions=(profile_mod.Dimension("a", "house_style", 1.0, "q", ("x", "y")),),
     gate=None,
 )
 
-ANSWERS = {"a": {"type": "score", "score": 1.0, "confidence": 0.9,
-                 "legend": {"0": "x", "1": "y"}, "probabilities": {"0": 0.0, "1": 1.0}}}
+ANSWERS = {
+    "a": {
+        "type": "score",
+        "score": 1.0,
+        "confidence": 0.9,
+        "legend": {"0": "x", "1": "y"},
+        "probabilities": {"0": 0.0, "1": 1.0},
+    }
+}
 
 
 def make_docs(count):
     return [
-        sources.Document(f"doc{i}.md", f"Doc {i}", f"Body {i}.", "file", None)
-        for i in range(count)
+        sources.Document(f"doc{i}.md", f"Doc {i}", f"Body {i}.", "file", None) for i in range(count)
     ]
 
 
 class FakeResponse:
     def __init__(self, answers, model="jev-1.13.0"):
         self.raw_http_response = self
-        self._payload = {"answers": answers, "model": model,
-                         "usage": {"input_tokens": 100, "output_tokens": 10}}
+        self._payload = {
+            "answers": answers,
+            "model": model,
+            "usage": {"input_tokens": 100, "output_tokens": 10},
+        }
         self.model = model
 
     def json(self):
@@ -72,7 +82,8 @@ def fake(monkeypatch):
 
 async def test_evaluates_every_document(fake, tmp_path):
     outcomes = await evaluate.evaluate_documents(
-        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False
+    )
     assert len(outcomes) == 3
     assert all(o.error is None for o in outcomes)
     assert outcomes[0].answers["a"]["score"] == 1.0
@@ -80,8 +91,7 @@ async def test_evaluates_every_document(fake, tmp_path):
 
 async def test_preserves_input_order(fake, tmp_path):
     docs = make_docs(5)
-    outcomes = await evaluate.evaluate_documents(
-        docs, PROF, cache_dir=tmp_path, use_cache=False)
+    outcomes = await evaluate.evaluate_documents(docs, PROF, cache_dir=tmp_path, use_cache=False)
     assert [o.document.id for o in outcomes] == [d.id for d in docs]
 
 
@@ -89,7 +99,8 @@ async def test_one_failure_does_not_stop_the_run(monkeypatch, tmp_path):
     client = FakeClient(fail_on={"doc1.md"})
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
     outcomes = await evaluate.evaluate_documents(
-        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False
+    )
     assert outcomes[1].error is not None
     assert "boom" in outcomes[1].error
     assert outcomes[0].error is None and outcomes[2].error is None
@@ -99,7 +110,8 @@ async def test_respects_the_concurrency_limit(monkeypatch, tmp_path):
     client = FakeClient(delay=0.01)
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
     await evaluate.evaluate_documents(
-        make_docs(8), PROF, concurrency=2, cache_dir=tmp_path, use_cache=False)
+        make_docs(8), PROF, concurrency=2, cache_dir=tmp_path, use_cache=False
+    )
     # == pins the lower bound too: <= 2 stays true even if concurrency
     # silently serialized down to 1, which wouldn't actually be respecting
     # the limit, just never hitting it.
@@ -139,8 +151,12 @@ async def test_edited_text_misses_the_cache(monkeypatch, tmp_path):
 async def test_callbacks_fire_per_document(fake, tmp_path):
     started, finished = [], []
     await evaluate.evaluate_documents(
-        make_docs(2), PROF, cache_dir=tmp_path, use_cache=False,
-        on_start=started.append, on_done=lambda o: finished.append(o.document.id),
+        make_docs(2),
+        PROF,
+        cache_dir=tmp_path,
+        use_cache=False,
+        on_start=started.append,
+        on_done=lambda o: finished.append(o.document.id),
     )
     assert len(started) == 2
     assert sorted(finished) == ["doc0.md", "doc1.md"]
@@ -148,14 +164,18 @@ async def test_callbacks_fire_per_document(fake, tmp_path):
 
 async def test_usage_is_reported(fake, tmp_path):
     outcomes = await evaluate.evaluate_documents(
-        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False
+    )
     assert outcomes[0].usage["input_tokens"] == 100
 
 
 def test_describe_invalid_request_names_the_field():
     error = RuntimeError("boom")
-    error.body = {"detail": [{"loc": ["questions", "active_voice", "criteria"],
-                              "msg": "must have at least 2 levels"}]}
+    error.body = {
+        "detail": [
+            {"loc": ["questions", "active_voice", "criteria"], "msg": "must have at least 2 levels"}
+        ]
+    }
     message = evaluate.describe_invalid_request(error)
     assert "questions.active_voice.criteria" in message
     assert "at least 2 levels" in message
@@ -174,17 +194,19 @@ async def test_a_422_reports_the_offending_field(monkeypatch, tmp_path):
         async def system_one(self, state, questions, **kwargs):
             # Built without calling __init__, so the test does not depend on
             # the SDK exception's constructor signature.
-            error = TypeSafeUnprocessableEntityError.__new__(
-                TypeSafeUnprocessableEntityError
-            )
+            error = TypeSafeUnprocessableEntityError.__new__(TypeSafeUnprocessableEntityError)
             error.args = ("unprocessable",)
-            error.body = {"detail": [{"loc": ["questions", "concision", "criteria"],
-                                      "msg": "too many levels"}]}
+            error.body = {
+                "detail": [
+                    {"loc": ["questions", "concision", "criteria"], "msg": "too many levels"}
+                ]
+            }
             raise error
 
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: Failing())
     [outcome] = await evaluate.evaluate_documents(
-        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False
+    )
     assert "questions.concision.criteria" in outcome.error
 
 
@@ -275,7 +297,8 @@ async def test_api_timeout_override_reaches_the_client(monkeypatch, tmp_path):
 
     monkeypatch.setattr(evaluate, "_new_client", fake_new_client)
     await evaluate.evaluate_documents(
-        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False, api_timeout=5.0)
+        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False, api_timeout=5.0
+    )
 
     assert captured.get("timeout") == 5.0
 
@@ -325,8 +348,7 @@ async def test_cache_hits_do_not_consume_a_concurrency_slot(monkeypatch, tmp_pat
 
     cold_client = FakeClient()
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: cold_client)
-    outcomes = await evaluate.evaluate_documents(
-        docs, PROF, concurrency=1, cache_dir=tmp_path)
+    outcomes = await evaluate.evaluate_documents(docs, PROF, concurrency=1, cache_dir=tmp_path)
 
     assert len(outcomes) == 5
     assert all(o.cached for o in outcomes)
@@ -356,7 +378,8 @@ async def test_input_order_survives_out_of_order_completion(monkeypatch, tmp_pat
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
 
     outcomes = await evaluate.evaluate_documents(
-        docs, PROF, concurrency=len(docs), cache_dir=tmp_path, use_cache=False)
+        docs, PROF, concurrency=len(docs), cache_dir=tmp_path, use_cache=False
+    )
 
     assert [o.document.id for o in outcomes] == [d.id for d in docs]
 
@@ -367,7 +390,8 @@ async def test_a_failure_does_not_corrupt_survivors_answers(monkeypatch, tmp_pat
     client = FakeClient(fail_on={"doc1.md"})
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: client)
     outcomes = await evaluate.evaluate_documents(
-        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False
+    )
 
     assert outcomes[1].answers is None
     assert outcomes[0].answers["a"]["score"] == 1.0
@@ -393,11 +417,23 @@ async def test_cached_and_live_outcomes_feed_scoring_identically(monkeypatch, tm
     assert live.answers == cached.answers
 
     live_result = scoring.score_document(
-        document=docs[0], prof=PROF, answers=live.answers, violations=(),
-        min_confidence=0.5, model=live.model, cached=live.cached)
+        document=docs[0],
+        prof=PROF,
+        answers=live.answers,
+        violations=(),
+        min_confidence=0.5,
+        model=live.model,
+        cached=live.cached,
+    )
     cached_result = scoring.score_document(
-        document=docs[0], prof=PROF, answers=cached.answers, violations=(),
-        min_confidence=0.5, model=cached.model, cached=cached.cached)
+        document=docs[0],
+        prof=PROF,
+        answers=cached.answers,
+        violations=(),
+        min_confidence=0.5,
+        model=cached.model,
+        cached=cached.cached,
+    )
 
     assert live_result.composite == cached_result.composite
     assert live_result.verdict == cached_result.verdict
@@ -411,17 +447,19 @@ async def test_a_422_message_never_degrades_to_a_bare_status(monkeypatch, tmp_pa
 
     class Failing(FakeClient):
         async def system_one(self, state, questions, **kwargs):
-            error = TypeSafeUnprocessableEntityError.__new__(
-                TypeSafeUnprocessableEntityError
-            )
+            error = TypeSafeUnprocessableEntityError.__new__(TypeSafeUnprocessableEntityError)
             error.args = ("unprocessable",)
-            error.body = {"detail": [{"loc": ["questions", "concision", "criteria"],
-                                      "msg": "too many levels"}]}
+            error.body = {
+                "detail": [
+                    {"loc": ["questions", "concision", "criteria"], "msg": "too many levels"}
+                ]
+            }
             raise error
 
     monkeypatch.setattr(evaluate, "_new_client", lambda **kwargs: Failing())
     [outcome] = await evaluate.evaluate_documents(
-        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False)
+        make_docs(1), PROF, cache_dir=tmp_path, use_cache=False
+    )
 
     assert outcome.error is not None
     assert "questions.concision.criteria" in outcome.error
@@ -461,7 +499,10 @@ async def test_cache_check_happens_before_the_semaphore_is_acquired(monkeypatch,
 
     order = []
     await evaluate.evaluate_documents(
-        docs, PROF, concurrency=1, cache_dir=tmp_path,
+        docs,
+        PROF,
+        concurrency=1,
+        cache_dir=tmp_path,
         on_done=lambda outcome: order.append(outcome.document.id),
     )
 
@@ -481,7 +522,10 @@ async def test_a_raising_on_start_does_not_abort_the_run(monkeypatch, tmp_path):
             raise RuntimeError("progress display broke")
 
     outcomes = await evaluate.evaluate_documents(
-        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False,
+        make_docs(3),
+        PROF,
+        cache_dir=tmp_path,
+        use_cache=False,
         on_start=flaky_on_start,
     )
 
@@ -507,7 +551,10 @@ async def test_a_raising_on_done_does_not_abort_the_run(monkeypatch, tmp_path):
             raise RuntimeError("progress display broke")
 
     outcomes = await evaluate.evaluate_documents(
-        make_docs(3), PROF, cache_dir=tmp_path, use_cache=False,
+        make_docs(3),
+        PROF,
+        cache_dir=tmp_path,
+        use_cache=False,
         on_done=flaky_on_done,
     )
 

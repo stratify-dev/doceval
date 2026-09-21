@@ -90,7 +90,8 @@ def test_loads_a_url(monkeypatch):
         return httpx.Response(200, html=HTML)
 
     monkeypatch.setattr(
-        sources, "_client",
+        sources,
+        "_client",
         lambda timeout: httpx.Client(transport=httpx.MockTransport(handler)),
     )
     doc = sources.load_document("https://example.com/post", min_words=10)
@@ -107,7 +108,8 @@ def test_url_http_error_raises(monkeypatch):
         return httpx.Response(404)
 
     monkeypatch.setattr(
-        sources, "_client",
+        sources,
+        "_client",
         lambda timeout: httpx.Client(transport=httpx.MockTransport(handler)),
     )
     with pytest.raises(sources.SourceError, match="404"):
@@ -119,7 +121,8 @@ def test_url_with_no_article_text_raises(monkeypatch):
         return httpx.Response(200, html="<html><body><nav>Home</nav></body></html>")
 
     monkeypatch.setattr(
-        sources, "_client",
+        sources,
+        "_client",
         lambda timeout: httpx.Client(transport=httpx.MockTransport(handler)),
     )
     with pytest.raises(sources.SourceError, match="150-word floor") as exc_info:

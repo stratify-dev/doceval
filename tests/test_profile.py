@@ -6,10 +6,20 @@ VALID = {
     "name": "t",
     "audience": "Working developers.",
     "dimensions": {
-        "a": {"group": "house_style", "weight": 0.6, "type": "score",
-              "instructions": "How active?", "levels": ["bad", "ok", "good"]},
-        "b": {"group": "editorial", "weight": 0.4, "type": "score",
-              "instructions": "How clear?", "levels": ["bad", "good"]},
+        "a": {
+            "group": "house_style",
+            "weight": 0.6,
+            "type": "score",
+            "instructions": "How active?",
+            "levels": ["bad", "ok", "good"],
+        },
+        "b": {
+            "group": "editorial",
+            "weight": 0.4,
+            "type": "score",
+            "instructions": "How clear?",
+            "levels": ["bad", "good"],
+        },
     },
 }
 
@@ -38,11 +48,16 @@ def test_by_group_preserves_declaration_order():
 
 
 def test_parses_gate():
-    data = {**VALID, "gate": {"is_prose": {
-        "type": "noul",
-        "instructions": "Finished prose?",
-        "criteria": {"true": "yes it is", "false": "no it is not"},
-    }}}
+    data = {
+        **VALID,
+        "gate": {
+            "is_prose": {
+                "type": "noul",
+                "instructions": "Finished prose?",
+                "criteria": {"true": "yes it is", "false": "no it is not"},
+            }
+        },
+    }
     p = mod.parse_profile(data, "test")
     assert p.gate is not None
     assert p.gate.id == "is_prose"
@@ -61,49 +76,98 @@ def test_rejects_weights_not_summing_to_one():
 
 
 def test_accepts_weights_within_tolerance():
-    data = {"name": "t", "audience": "x", "dimensions": {
-        "a": {"group": "house_style", "weight": 0.3333, "type": "score",
-              "instructions": "q", "levels": ["a", "b"]},
-        "b": {"group": "editorial", "weight": 0.3333, "type": "score",
-              "instructions": "q", "levels": ["a", "b"]},
-        "c": {"group": "audience_fit", "weight": 0.3334, "type": "score",
-              "instructions": "q", "levels": ["a", "b"]},
-    }}
+    data = {
+        "name": "t",
+        "audience": "x",
+        "dimensions": {
+            "a": {
+                "group": "house_style",
+                "weight": 0.3333,
+                "type": "score",
+                "instructions": "q",
+                "levels": ["a", "b"],
+            },
+            "b": {
+                "group": "editorial",
+                "weight": 0.3333,
+                "type": "score",
+                "instructions": "q",
+                "levels": ["a", "b"],
+            },
+            "c": {
+                "group": "audience_fit",
+                "weight": 0.3334,
+                "type": "score",
+                "instructions": "q",
+                "levels": ["a", "b"],
+            },
+        },
+    }
     assert len(mod.parse_profile(data, "test").dimensions) == 3
 
 
 def test_rejects_unknown_group():
-    data = {"name": "t", "audience": "x", "dimensions": {
-        "a": {"group": "nonsense", "weight": 1.0, "type": "score",
-              "instructions": "q", "levels": ["a", "b"]},
-    }}
+    data = {
+        "name": "t",
+        "audience": "x",
+        "dimensions": {
+            "a": {
+                "group": "nonsense",
+                "weight": 1.0,
+                "type": "score",
+                "instructions": "q",
+                "levels": ["a", "b"],
+            },
+        },
+    }
     with pytest.raises(mod.ProfileError, match="nonsense"):
         mod.parse_profile(data, "test")
 
 
 def test_rejects_single_level_score():
-    data = {"name": "t", "audience": "x", "dimensions": {
-        "a": {"group": "house_style", "weight": 1.0, "type": "score",
-              "instructions": "q", "levels": ["only"]},
-    }}
+    data = {
+        "name": "t",
+        "audience": "x",
+        "dimensions": {
+            "a": {
+                "group": "house_style",
+                "weight": 1.0,
+                "type": "score",
+                "instructions": "q",
+                "levels": ["only"],
+            },
+        },
+    }
     with pytest.raises(mod.ProfileError, match="at least 2"):
         mod.parse_profile(data, "test")
 
 
 def test_rejects_more_than_ten_levels():
-    data = {"name": "t", "audience": "x", "dimensions": {
-        "a": {"group": "house_style", "weight": 1.0, "type": "score",
-              "instructions": "q", "levels": [str(i) for i in range(11)]},
-    }}
+    data = {
+        "name": "t",
+        "audience": "x",
+        "dimensions": {
+            "a": {
+                "group": "house_style",
+                "weight": 1.0,
+                "type": "score",
+                "instructions": "q",
+                "levels": [str(i) for i in range(11)],
+            },
+        },
+    }
     with pytest.raises(mod.ProfileError, match="at most 10"):
         mod.parse_profile(data, "test")
 
 
 def test_rejects_missing_instructions():
-    data = {"name": "t", "audience": "x", "dimensions": {
-        "a": {"group": "house_style", "weight": 1.0, "type": "score",
-              "levels": ["a", "b"]},
-    }}
+    data = {
+        "name": "t",
+        "audience": "x",
+        "dimensions": {
+            "a": {"group": "house_style", "weight": 1.0, "type": "score", "levels": ["a", "b"]},
+        },
+    }
     with pytest.raises(mod.ProfileError, match="instructions"):
         mod.parse_profile(data, "test")
 

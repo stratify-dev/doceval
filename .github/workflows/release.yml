@@ -1,0 +1,220 @@
+# Release pipeline, modelled on stratify's shape:
+#   tag push -> per-platform binaries -> GitHub Release -> homebrew formula.
+#
+# stratify uses cargo-dist, which is Rust-only. doceval is Python, so the
+# binaries are produced with PyInstaller and the formula is generated here.
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (dry run; does not publish)"
+        required: false
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync (locked)
+        run: uv sync --locked
+
+      - name: Build binary
+        shell: bash
+        run: |
+          # --add-data places the shipped rubric at doceval/profiles inside the
+          # bundle, which is exactly where profile.PROFILE_DIR looks for it
+          # (Path(__file__).parent / "profiles"). Verified before this workflow
+          # was written; the smoke test below is the regression guard.
+          uv run pyinstaller \
+            --onefile \
+            --name doceval \
+            --add-data "$PWD/src/doceval/profiles:doceval/profiles" \
+            --collect-all trafilatura \
+            --collect-all typesafe_sdk \
+            --paths "$PWD/src" \
+            --distpath dist-bin \
+            src/doceval/__main__.py
+
+      - name: Smoke test the binary
+        shell: bash
+        env:
+          TYPESAFE_API_KEY: ""
+        run: |
+          set -euo pipefail
+          BIN=dist-bin/doceval
+
+          # The bundled rubric must be reachable from the frozen binary.
+          "$BIN" profiles | grep -q "house-style"
+
+          # lint must work with no API key and no network.
+          env -u TYPESAFE_API_KEY "$BIN" lint README.md
+
+          # eval without a key must fail before any work, exit 2.
+          set +e
+          env -u TYPESAFE_API_KEY "$BIN" eval README.md >/dev/null 2>&1
+          code=$?
+          set -e
+          test "$code" -eq 2 || { echo "expected exit 2 without a key, got $code"; exit 1; }
+
+          echo "smoke test passed on ${{ matrix.target }}"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="doceval-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp dist-bin/doceval "$staging/"
+          cp README.md LICENSE "$staging/"
+          tar -cJf "$staging.tar.xz" "$staging"
+          shasum -a 256 "$staging.tar.xz" | tee "$staging.tar.xz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: doceval-${{ matrix.target }}
+          path: |
+            doceval-${{ matrix.target }}.tar.xz
+            doceval-${{ matrix.target }}.tar.xz.sha256
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: doceval-*
+          path: artifacts
+          merge-multiple: true
+
+      - id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "doceval $GITHUB_REF_NAME" \
+            --generate-notes \
+            artifacts/*.tar.xz artifacts/*.sha256
+
+  publish-homebrew-formula:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_USER: "stratify bot"
+      GITHUB_EMAIL: "bot@stratify.dev"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: stratify-dev/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          persist-credentials: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: doceval-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate formula
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha() { awk '{print $1}' "artifacts/doceval-$1.tar.xz.sha256"; }
+          base="https://github.com/stratify-dev/doceval/releases/download/v${VERSION}"
+
+          mkdir -p Formula
+          cat > Formula/doceval.rb <<RUBY
+          class Doceval < Formula
+            desc "doceval: score written content on house style, editorial quality, and audience fit"
+            homepage "https://github.com/stratify-dev/doceval"
+            version "${VERSION}"
+            license "MIT"
+
+            if OS.mac?
+              if Hardware::CPU.arm?
+                url "${base}/doceval-aarch64-apple-darwin.tar.xz"
+                sha256 "$(sha aarch64-apple-darwin)"
+              end
+              if Hardware::CPU.intel?
+                url "${base}/doceval-x86_64-apple-darwin.tar.xz"
+                sha256 "$(sha x86_64-apple-darwin)"
+              end
+            end
+            if OS.linux?
+              if Hardware::CPU.arm?
+                url "${base}/doceval-aarch64-unknown-linux-gnu.tar.xz"
+                sha256 "$(sha aarch64-unknown-linux-gnu)"
+              end
+              if Hardware::CPU.intel?
+                url "${base}/doceval-x86_64-unknown-linux-gnu.tar.xz"
+                sha256 "$(sha x86_64-unknown-linux-gnu)"
+              end
+            end
+
+            def install
+              bin.install "doceval"
+
+              doc_files = Dir["README.*", "LICENSE", "LICENSE.*", "CHANGELOG.*"]
+              leftover_contents = Dir["*"] - doc_files
+              pkgshare.install(*leftover_contents) unless leftover_contents.empty?
+            end
+
+            test do
+              # profiles reads the rubric bundled inside the binary, so this
+              # fails loudly if packaging ever drops it. Needs no API key.
+              assert_match "house-style", shell_output("#{bin}/doceval profiles")
+            end
+          end
+          RUBY
+
+          # Show what will be committed; the tap is a shared repo.
+          cat Formula/doceval.rb
+
+      - name: Commit formula
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          git config user.name "${GITHUB_USER}"
+          git config user.email "${GITHUB_EMAIL}"
+          git add Formula/doceval.rb
+          git commit -m "doceval ${VERSION}"
+          git push

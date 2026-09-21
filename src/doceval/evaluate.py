@@ -77,8 +77,10 @@ def _retry_budget(api_timeout: float) -> float:
 def _retry_policy(api_timeout: float) -> RetryPolicy:
     """Build the retry policy for one client, budgeted for this api_timeout."""
     return RetryPolicy(
-        max_retries=RETRY_MAX_RETRIES, backoff_initial=RETRY_BACKOFF_INITIAL,
-        backoff_max=RETRY_BACKOFF_MAX, respect_retry_after=True,
+        max_retries=RETRY_MAX_RETRIES,
+        backoff_initial=RETRY_BACKOFF_INITIAL,
+        backoff_max=RETRY_BACKOFF_MAX,
+        respect_retry_after=True,
         timeout=_retry_budget(api_timeout),
     )
 
@@ -167,29 +169,40 @@ async def evaluate_documents(
                 if use_cache:
                     hit = cache_mod.read(directory, key)
                     if hit is not None:
-                        return finish(Outcome(
-                            document=document, answers=hit.get("answers", {}),
-                            model=hit.get("model", model), usage={}, cached=True,
-                        ))
+                        return finish(
+                            Outcome(
+                                document=document,
+                                answers=hit.get("answers", {}),
+                                model=hit.get("model", model),
+                                usage={},
+                                cached=True,
+                            )
+                        )
 
                 async with semaphore:
                     try:
-                        response = await client.system_one(
-                            build_state(document, prof), questions
-                        )
+                        response = await client.system_one(build_state(document, prof), questions)
                     except TypeSafeUnprocessableEntityError as error:
                         # A 422 is a profile bug, not a runtime one. Name the field.
-                        return finish(Outcome(
-                            document=document, answers=None, model=model,
-                            error=describe_invalid_request(error),
-                        ))
+                        return finish(
+                            Outcome(
+                                document=document,
+                                answers=None,
+                                model=model,
+                                error=describe_invalid_request(error),
+                            )
+                        )
                     except Exception as error:  # isolate one document's failure
                         detail = getattr(error, "request_id", None)
                         suffix = f" (request {detail})" if detail else ""
-                        return finish(Outcome(
-                            document=document, answers=None, model=model,
-                            error=f"{type(error).__name__}: {error}{suffix}",
-                        ))
+                        return finish(
+                            Outcome(
+                                document=document,
+                                answers=None,
+                                model=model,
+                                error=f"{type(error).__name__}: {error}{suffix}",
+                            )
+                        )
 
                 payload = response.raw_http_response.json()
                 answers = dict(payload.get("answers", {}))
@@ -198,14 +211,19 @@ async def evaluate_documents(
 
                 if use_cache:
                     cache_mod.write(
-                        directory, key,
+                        directory,
+                        key,
                         {"model": answered_model, "answers": answers, "usage": usage},
                     )
 
-                return finish(Outcome(
-                    document=document, answers=answers, model=answered_model,
-                    usage=usage,
-                ))
+                return finish(
+                    Outcome(
+                        document=document,
+                        answers=answers,
+                        model=answered_model,
+                        usage=usage,
+                    )
+                )
             except Exception as error:
                 # Nothing above this point may escape into gather: a raising
                 # on_start, a corrupt cache read, or a malformed response must
@@ -213,9 +231,13 @@ async def evaluate_documents(
                 # down with it. A raising on_done is already swallowed inside
                 # finish(), so a document that was actually evaluated keeps
                 # its real answers instead of being overwritten here.
-                return finish(Outcome(
-                    document=document, answers=None, model=model,
-                    error=f"{type(error).__name__}: {error}",
-                ))
+                return finish(
+                    Outcome(
+                        document=document,
+                        answers=None,
+                        model=model,
+                        error=f"{type(error).__name__}: {error}",
+                    )
+                )
 
         return list(await asyncio.gather(*(run(d) for d in documents)))
